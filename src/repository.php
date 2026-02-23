@@ -219,6 +219,15 @@ function allIngredients(): array
     return $stmt->fetchAll();
 }
 
+function ingredientById(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT id, name, price_per_unit, stock_qty, created_at FROM ingredients WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => $id]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
+}
+
 function allIngredientsByStockOrder(): array
 {
     $stmt = db()->query('SELECT id, name, price_per_unit, stock_qty, created_at FROM ingredients ORDER BY stock_qty DESC, name');
@@ -361,6 +370,27 @@ function recipeItemsByProduct(int $productId): array
     $stmt = db()->prepare('SELECT ri.*, i.name AS ingredient_name, i.price_per_unit FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id WHERE ri.product_id = :id ORDER BY i.name');
     $stmt->execute([':id' => $productId]);
     return $stmt->fetchAll();
+}
+
+function recipeItemByProductAndIngredient(int $productId, int $ingredientId): ?array
+{
+    $stmt = db()->prepare('SELECT ri.*, i.name AS ingredient_name, p.name AS product_name FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id JOIN products p ON p.id = ri.product_id WHERE ri.product_id = :product_id AND ri.ingredient_id = :ingredient_id LIMIT 1');
+    $stmt->execute([
+        ':product_id' => $productId,
+        ':ingredient_id' => $ingredientId,
+    ]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
+}
+
+function recipeItemById(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT ri.*, i.name AS ingredient_name, p.name AS product_name FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id JOIN products p ON p.id = ri.product_id WHERE ri.id = :id LIMIT 1');
+    $stmt->execute([':id' => $id]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
 }
 
 function upsertRecipeItem(int $productId, int $ingredientId, float $qty): void
