@@ -398,9 +398,9 @@ $message = flash();
     <p>Hier siehst du Gerichte und Zutaten gemeinsam. Du kannst die Reihenfolge per Drag &amp; Drop sortieren und nur die aktuelle Lagermenge pflegen.</p>
     <table>
         <thead><tr><th>Typ</th><th>Name</th><th>Aktueller Lagerbestand</th></tr></thead>
-        <tbody id="inventory-items" class="inventory-list">
+        <tbody id="inventory-items" class="inventory-list" data-sortable-key="inventory-order-v1">
         <?php foreach ($inventoryItems as $item): ?>
-            <tr draggable="true" data-item-type="<?= htmlspecialchars($item['type']) ?>" data-item-id="<?= (int)$item['id'] ?>">
+            <tr draggable="true" data-item-type="<?= htmlspecialchars($item['type']) ?>" data-item-id="<?= (int)$item['id'] ?>" data-sort-value="<?= htmlspecialchars($item['type'] . ':' . (string)$item['id']) ?>">
                 <td><?= htmlspecialchars($item['type_label']) ?></td>
                 <td><?= htmlspecialchars($item['name']) ?></td>
                 <td>
@@ -464,7 +464,6 @@ $message = flash();
     <ul>
         <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
         <li>Anzahl Gerichte: <?= count($products) ?></li>
-        <li>Aktueller Einkaufsbedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</li>
     </ul>
 </section>
 <?php endif; ?>
@@ -480,42 +479,23 @@ $message = flash();
             </ul>
         </section>
 
-<?php if ($view === 'shopping' || $view === 'dashboard'): ?>
+<?php if ($view === 'shopping'): ?>
 <section>
     <h2>Einkaufsliste (automatisch)</h2>
-    <h3>Fehlende Zutaten</h3>
+    <p>Alle benötigten Einkäufe in einer Liste. Die Reihenfolge kannst du per Drag &amp; Drop anpassen.</p>
     <table>
-        <thead><tr><th>Zutat</th><th>Stück</th><th>Einheit</th><th>Preis / Stück</th><th>Summe</th></tr></thead>
-        <tbody>
-        <?php foreach ($shoppingList['ingredient_purchases'] as $row): ?>
-            <tr>
+        <thead><tr><th>Typ</th><th>Artikel</th><th>Menge</th><th>Einheit</th></tr></thead>
+        <tbody class="shopping-list" data-sortable-key="shopping-order-v1">
+        <?php foreach ($shoppingList['items'] as $row): ?>
+            <tr draggable="true" data-sort-value="<?= htmlspecialchars($row['type'] . ':' . $row['name']) ?>">
+                <td><?= htmlspecialchars($row['type']) ?></td>
                 <td><?= htmlspecialchars($row['name']) ?></td>
                 <td><?= number_format((float)$row['qty'], 2, ',', '.') ?></td>
                 <td><?= htmlspecialchars($row['unit']) ?></td>
-                <td><?= number_format((float)$row['unit_price'], 2, ',', '.') ?> €</td>
-                <td><?= number_format((float)$row['sum'], 2, ',', '.') ?> €</td>
             </tr>
         <?php endforeach; ?>
-        <?php if (count($shoppingList['ingredient_purchases']) === 0): ?>
-            <tr><td colspan="5">Keine fehlenden Zutaten.</td></tr>
-        <?php endif; ?>
-        </tbody>
-    </table>
-
-    <h3>Direkt einzukaufende Gerichte</h3>
-    <table>
-        <thead><tr><th>Artikel</th><th>Menge</th><th>Preis / Stück</th><th>Summe</th></tr></thead>
-        <tbody>
-        <?php foreach ($shoppingList['product_purchases'] as $row): ?>
-            <tr>
-                <td><?= htmlspecialchars($row['name']) ?></td>
-                <td><?= (int)$row['qty'] ?></td>
-                <td><?= number_format((float)$row['unit_price'], 2, ',', '.') ?> €</td>
-                <td><?= number_format((float)$row['sum'], 2, ',', '.') ?> €</td>
-            </tr>
-        <?php endforeach; ?>
-        <?php if (count($shoppingList['product_purchases']) === 0): ?>
-            <tr><td colspan="4">Keine direkten Artikel nötig.</td></tr>
+        <?php if (count($shoppingList['items']) === 0): ?>
+            <tr><td colspan="4">Kein Einkaufsbedarf.</td></tr>
         <?php endif; ?>
         </tbody>
     </table>
@@ -590,77 +570,77 @@ $message = flash();
             });
         });
 
-        const containers = document.querySelectorAll('.inventory-list');
-        const inventoryStorageKey = 'inventory-order-v1';
+        const sortableContainers = document.querySelectorAll('[data-sortable-key]');
         let draggedRow = null;
 
-        const rowKey = (row) => {
-            const type = row?.dataset?.itemType;
-            const id = row?.dataset?.itemId;
-            if (!type || !id) {
-                return null;
+        const saveOrder = (container) => {
+            const storageKey = container.dataset.sortableKey;
+            if (!storageKey) {
+                return;
             }
-            return `${type}:${id}`;
-        };
 
-        const saveInventoryOrder = (container) => {
-            const keys = Array.from(container.querySelectorAll('tr'))
-                .map(rowKey)
-                .filter((value) => value !== null);
+            const values = Array.from(container.querySelectorAll('tr[draggable="true"]'))
+                .map((row) => row.dataset.sortValue || row.textContent?.trim() || '')
+                .filter((value) => value !== '');
 
-            if (keys.length > 0) {
-                window.localStorage.setItem(inventoryStorageKey, JSON.stringify(keys));
+            if (values.length > 0) {
+                window.localStorage.setItem(storageKey, JSON.stringify(values));
             }
         };
 
-        const restoreInventoryOrder = (container) => {
-            const raw = window.localStorage.getItem(inventoryStorageKey);
+        const restoreOrder = (container) => {
+            const storageKey = container.dataset.sortableKey;
+            if (!storageKey) {
+                return;
+            }
+
+            const raw = window.localStorage.getItem(storageKey);
             if (!raw) {
                 return;
             }
 
-            let savedKeys = [];
+            let savedValues = [];
             try {
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed)) {
-                    savedKeys = parsed;
+                    savedValues = parsed;
                 }
             } catch (_error) {
-                window.localStorage.removeItem(inventoryStorageKey);
+                window.localStorage.removeItem(storageKey);
                 return;
             }
 
-            if (savedKeys.length === 0) {
+            if (savedValues.length === 0) {
                 return;
             }
 
-            const rowsByKey = new Map();
-            Array.from(container.querySelectorAll('tr')).forEach((row) => {
-                const key = rowKey(row);
-                if (key) {
-                    rowsByKey.set(key, row);
+            const rowsByValue = new Map();
+            Array.from(container.querySelectorAll('tr[draggable="true"]')).forEach((row) => {
+                const value = row.dataset.sortValue || row.textContent?.trim() || '';
+                if (value !== '') {
+                    rowsByValue.set(value, row);
                 }
             });
 
-            savedKeys.forEach((key) => {
-                const row = rowsByKey.get(key);
+            savedValues.forEach((value) => {
+                const row = rowsByValue.get(value);
                 if (!row) {
                     return;
                 }
                 container.appendChild(row);
-                rowsByKey.delete(key);
+                rowsByValue.delete(value);
             });
 
-            rowsByKey.forEach((row) => {
+            rowsByValue.forEach((row) => {
                 container.appendChild(row);
             });
         };
 
-        containers.forEach((container) => {
-            restoreInventoryOrder(container);
+        sortableContainers.forEach((container) => {
+            restoreOrder(container);
 
             container.addEventListener('dragstart', (event) => {
-                const row = event.target.closest('tr');
+                const row = event.target.closest('tr[draggable="true"]');
                 if (!row) {
                     return;
                 }
@@ -672,18 +652,18 @@ $message = flash();
                 if (draggedRow) {
                     draggedRow.style.opacity = '1';
                 }
-                saveInventoryOrder(container);
+                saveOrder(container);
                 draggedRow = null;
             });
 
             container.addEventListener('dragover', (event) => {
                 event.preventDefault();
-                const targetRow = event.target.closest('tr');
+                const targetRow = event.target.closest('tr[draggable="true"]');
                 if (!draggedRow || !targetRow || targetRow === draggedRow) {
                     return;
                 }
 
-                const rows = Array.from(container.querySelectorAll('tr'));
+                const rows = Array.from(container.querySelectorAll('tr[draggable="true"]'));
                 const draggedIndex = rows.indexOf(draggedRow);
                 const targetIndex = rows.indexOf(targetRow);
 
