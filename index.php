@@ -369,7 +369,8 @@ try {
         if ($action === 'shopping.complete') {
             $list = shoppingList();
             sendShoppingListWebhook($list, companyName(), currentUser());
-            flash('Einkaufsliste abgeschlossen und an Discord gesendet. Lagerbestände wurden nicht verändert.');
+            completeShoppingListAndUpdateInventory();
+            flash('Einkaufsliste abgeschlossen, an Discord gesendet und Lagerbestände aktualisiert.');
             header('Location: ?view=shopping');
             exit;
         }
