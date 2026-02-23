@@ -236,6 +236,14 @@ try {
         exit;
     }
 
+    if ($action === 'admin.user.delete') {
+        requireAdmin();
+        deleteUserAccess((string)($_POST['discord_id'] ?? ''));
+        flash('Mitarbeiter gelöscht.');
+        header('Location: ?view=employees');
+        exit;
+    }
+
     if ($action === 'admin.user.rename') {
         requireAdmin();
         setUserDisplayName((string)($_POST['discord_id'] ?? ''), (string)($_POST['display_name'] ?? ''));
@@ -619,7 +627,7 @@ $message = flash();
 <body>
 <div class="app-shell">
     <header class="top-bar">
-        <h1><?= htmlspecialchars(trim(($companyName !== '' ? $companyName . ' ' : '') . 'Business Verwaltung & Einkaufsliste')) ?></h1>
+        <h1><?= htmlspecialchars(trim($companyName)) ?></h1>
         <?php if ($loggedIn): ?>
             <div style="display:flex; align-items:center; gap:10px;">
                 <small>Angemeldet als <?= htmlspecialchars((string)($user['display_name'] ?? $user['discord_id'] ?? '')) ?></small>
@@ -663,9 +671,6 @@ $message = flash();
 
 <?php elseif ($view === 'employees' && isAdminUser($user)): ?>
 <section>
-    <h2>Admin: Mitarbeiter verwalten</h2>
-    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
-    <p>Hier siehst du alle Nutzer, die sich via Discord angemeldet haben.</p>
     <nav class="pill-nav" style="margin-top:8px;">
         <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
@@ -709,6 +714,11 @@ $message = flash();
                                 <button type="submit">Admin freischalten</button>
                             </form>
                         <?php endif; ?>
+                        <form method="post" style="display:inline">
+                            <input type="hidden" name="action" value="admin.user.delete">
+                            <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
+                            <button class="danger" type="submit" onclick="return confirm('Mitarbeiter wirklich löschen?')">Löschen</button>
+                        </form>
                         <form method="post" style="display:inline-flex; gap:6px; align-items:center; margin-top:6px;">
                             <input type="hidden" name="action" value="admin.user.rename">
                             <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
@@ -992,7 +1002,7 @@ $message = flash();
 <?php endif; ?>
     </div>
 
-<?php if ($loggedIn && $view !== 'shopping' && $view !== 'login'): ?>
+<?php if ($loggedIn && $view === 'dashboard'): ?>
     <div>
         <section>
             <h2>Live Überblick</h2>

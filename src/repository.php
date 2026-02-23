@@ -8,6 +8,11 @@ function discordAdminId(): string
     return '460750108615770134';
 }
 
+function adminDisplayName(): string
+{
+    return 'Manuel Cassano';
+}
+
 function findUserByDiscordId(string $discordId): ?array
 {
     $stmt = db()->prepare('SELECT id, discord_id, display_name, is_admin, is_approved, created_at, updated_at FROM user_access WHERE discord_id = :discord_id LIMIT 1');
@@ -26,6 +31,9 @@ function createOrUpdateUserAccess(string $discordId, string $displayName): array
 
     $displayName = trim($displayName);
     $isAdmin = $discordId === discordAdminId() ? 1 : 0;
+    if ($isAdmin === 1) {
+        $displayName = adminDisplayName();
+    }
 
     $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
     if ($driver === 'sqlite') {
@@ -81,11 +89,30 @@ function setUserDisplayName(string $discordId, string $displayName): void
         throw new InvalidArgumentException('Name darf nicht leer sein.');
     }
 
+    if ($discordId === discordAdminId()) {
+        $displayName = adminDisplayName();
+    }
+
     $stmt = db()->prepare('UPDATE user_access SET display_name = :display_name WHERE discord_id = :discord_id');
     $stmt->execute([
         ':display_name' => $displayName,
         ':discord_id' => $discordId,
     ]);
+}
+
+function deleteUserAccess(string $discordId): void
+{
+    $discordId = trim($discordId);
+    if ($discordId === '') {
+        throw new InvalidArgumentException('Discord ID fehlt.');
+    }
+
+    if ($discordId === discordAdminId()) {
+        return;
+    }
+
+    $stmt = db()->prepare('DELETE FROM user_access WHERE discord_id = :discord_id');
+    $stmt->execute([':discord_id' => $discordId]);
 }
 
 function allUserAccessEntries(): array

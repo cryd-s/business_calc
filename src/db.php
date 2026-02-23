@@ -219,8 +219,11 @@ SQL);
         $pdo->exec("ALTER TABLE user_access ADD COLUMN is_admin {$type} NOT NULL DEFAULT 0");
     }
 
-    $stmt = $pdo->prepare('UPDATE user_access SET is_admin = 1, is_approved = 1 WHERE discord_id = :discord_id');
-    $stmt->execute([':discord_id' => discordAdminId()]);
+    $stmt = $pdo->prepare('UPDATE user_access SET is_admin = 1, is_approved = 1, display_name = :display_name WHERE discord_id = :discord_id');
+    $stmt->execute([
+        ':discord_id' => discordAdminId(),
+        ':display_name' => adminDisplayName(),
+    ]);
 }
 
 function tableColumns(PDO $pdo, string $table, string $driver): array
