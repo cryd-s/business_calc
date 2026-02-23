@@ -163,7 +163,18 @@ function sendShoppingListWebhook(array $shoppingList, string $companyName, ?arra
         $lines[] = 'Kein Einkaufsbedarf vorhanden.';
     }
 
-    $completedBy = trim((string)($user['display_name'] ?? 'Unbekannt'));
+    $completedBy = 'Unbekannt';
+    $userDiscordId = trim((string)($user['discord_id'] ?? ''));
+    if ($userDiscordId !== '') {
+        $dbUser = findUserByDiscordId($userDiscordId);
+        if (is_array($dbUser)) {
+            $completedBy = trim((string)($dbUser['display_name'] ?? ''));
+        }
+    }
+
+    if ($completedBy === '') {
+        $completedBy = trim((string)($user['display_name'] ?? 'Unbekannt'));
+    }
     $titlePrefix = trim($companyName) !== '' ? $companyName . ' · ' : '';
 
     $payload = [
