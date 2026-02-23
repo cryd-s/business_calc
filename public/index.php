@@ -84,6 +84,28 @@ $ingredients = allIngredients();
 $products = allProducts();
 $inventoryIngredients = allIngredientsByStockOrder();
 $inventoryProducts = allProductsByStockOrder();
+$inventoryItems = [];
+foreach ($inventoryProducts as $product) {
+    $inventoryItems[] = [
+        'type' => 'product',
+        'type_label' => 'Gericht',
+        'id' => (int)$product['id'],
+        'name' => $product['name'],
+        'stock_qty' => (float)$product['stock_qty'],
+    ];
+}
+foreach ($inventoryIngredients as $ingredient) {
+    $inventoryItems[] = [
+        'type' => 'ingredient',
+        'type_label' => 'Zutat',
+        'id' => (int)$ingredient['id'],
+        'name' => $ingredient['name'],
+        'stock_qty' => (float)$ingredient['stock_qty'],
+    ];
+}
+usort($inventoryItems, static function (array $a, array $b): int {
+    return strcasecmp($a['name'], $b['name']);
+});
 $shoppingList = shoppingList();
 $productForRecipe = isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
@@ -360,44 +382,19 @@ $message = flash();
 <?php elseif ($view === 'inventory'): ?>
 <section>
     <h2>Lager</h2>
-    <p>Hier siehst du alle Gerichte und Zutaten. Du kannst die Reihenfolge per Drag &amp; Drop sortieren und nur die aktuelle Lagermenge pflegen.</p>
-
-    <h3>Gerichte</h3>
+    <p>Hier siehst du Gerichte und Zutaten gemeinsam. Du kannst die Reihenfolge per Drag &amp; Drop sortieren und nur die aktuelle Lagermenge pflegen.</p>
     <table>
-        <thead><tr><th>Name</th><th>Aktueller Lagerbestand</th><th>Aktion</th></tr></thead>
-        <tbody id="inventory-products" class="inventory-list">
-        <?php foreach ($inventoryProducts as $product): ?>
-            <tr draggable="true" data-item-type="product" data-item-id="<?= (int)$product['id'] ?>">
-                <td><?= htmlspecialchars($product['name']) ?></td>
+        <thead><tr><th>Typ</th><th>Name</th><th>Aktueller Lagerbestand</th><th>Aktion</th></tr></thead>
+        <tbody id="inventory-items" class="inventory-list">
+        <?php foreach ($inventoryItems as $item): ?>
+            <tr draggable="true" data-item-type="<?= htmlspecialchars($item['type']) ?>" data-item-id="<?= (int)$item['id'] ?>">
+                <td><?= htmlspecialchars($item['type_label']) ?></td>
+                <td><?= htmlspecialchars($item['name']) ?></td>
                 <td>
-                    <form method="post" style="display:flex; gap:8px; align-items:center;">
-                        <input type="hidden" name="action" value="product.stock.update">
-                        <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
-                        <input type="number" name="stock_qty" value="<?= (int)$product['stock_qty'] ?>">
-                </td>
-                <td>
-                        <button>Speichern</button>
-                    </form>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-
-    <h3>Zutaten</h3>
-    <table>
-        <thead><tr><th>Name</th><th>Aktueller Lagerbestand</th><th>Aktion</th></tr></thead>
-        <tbody id="inventory-ingredients" class="inventory-list">
-        <?php foreach ($inventoryIngredients as $ingredient): ?>
-            <tr draggable="true" data-item-type="ingredient" data-item-id="<?= (int)$ingredient['id'] ?>">
-                <td><?= htmlspecialchars($ingredient['name']) ?></td>
-                <td>
-                    <form method="post" style="display:flex; gap:8px; align-items:center;">
-                        <input type="hidden" name="action" value="ingredient.stock.update">
-                        <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
-                        <input type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>">
-                </td>
-                <td>
+                    <form method="post" class="autosave-form" style="display:flex; gap:8px; align-items:center;">
+                        <input type="hidden" name="action" value="<?= $item['type'] === 'product' ? 'product.stock.update' : 'ingredient.stock.update' ?>">
+                        <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
+                        <input type="number" <?= $item['type'] === 'ingredient' ? 'step="0.01"' : '' ?> name="stock_qty" value="<?= $item['type'] === 'ingredient' ? htmlspecialchars((string)$item['stock_qty']) : (int)$item['stock_qty'] ?>">
                         <button>Speichern</button>
                     </form>
                 </td>
@@ -517,6 +514,27 @@ $message = flash();
 </div>
 <script>
     (function () {
+        const autoSaveForms = document.querySelectorAll('form.autosave-form');
+
+        autoSaveForms.forEach((form) => {
+            let timeoutId = null;
+            const fields = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
+
+            fields.forEach((field) => {
+                field.addEventListener('input', () => {
+                    window.clearTimeout(timeoutId);
+                    timeoutId = window.setTimeout(() => {
+                        form.requestSubmit();
+                    }, 500);
+                });
+
+                field.addEventListener('change', () => {
+                    window.clearTimeout(timeoutId);
+                    form.requestSubmit();
+                });
+            });
+        });
+
         const containers = document.querySelectorAll('.inventory-list');
         let draggedRow = null;
 
