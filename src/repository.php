@@ -4,32 +4,26 @@ require_once __DIR__ . '/db.php';
 
 function allIngredients(): array
 {
-    $stmt = db()->query('SELECT * FROM ingredients ORDER BY name');
+    $stmt = db()->query('SELECT id, name, price_per_unit, created_at FROM ingredients ORDER BY name');
     return $stmt->fetchAll();
 }
 
 function createIngredient(array $input): void
 {
-    $stmt = db()->prepare('INSERT INTO ingredients (name, price_per_unit, unit, stock_qty, min_stock_qty) VALUES (:name, :price, :unit, :stock, :min_stock)');
+    $stmt = db()->prepare('INSERT INTO ingredients (name, price_per_unit) VALUES (:name, :price)');
     $stmt->execute([
         ':name' => trim($input['name']),
         ':price' => (float)$input['price_per_unit'],
-        ':unit' => trim($input['unit']) ?: 'Stk',
-        ':stock' => (float)$input['stock_qty'],
-        ':min_stock' => (float)$input['min_stock_qty'],
     ]);
 }
 
 function updateIngredient(int $id, array $input): void
 {
-    $stmt = db()->prepare('UPDATE ingredients SET name = :name, price_per_unit = :price, unit = :unit, stock_qty = :stock, min_stock_qty = :min_stock WHERE id = :id');
+    $stmt = db()->prepare('UPDATE ingredients SET name = :name, price_per_unit = :price WHERE id = :id');
     $stmt->execute([
         ':id' => $id,
         ':name' => trim($input['name']),
         ':price' => (float)$input['price_per_unit'],
-        ':unit' => trim($input['unit']) ?: 'Stk',
-        ':stock' => (float)$input['stock_qty'],
-        ':min_stock' => (float)$input['min_stock_qty'],
     ]);
 }
 
@@ -56,12 +50,13 @@ SQL;
 
 function createProduct(array $input): void
 {
-    $stmt = db()->prepare('INSERT INTO products (name, type, direct_purchase_price, target_qty, stock_qty) VALUES (:name, :type, :price, :target, :stock)');
-    $directPrice = $input['direct_purchase_price'] !== '' ? (float)$input['direct_purchase_price'] : null;
+    $stmt = db()->prepare('INSERT INTO products (name, direct_purchase_price, is_direct_purchase, target_qty, stock_qty) VALUES (:name, :price, :is_direct_purchase, :target, :stock)');
+    $directPrice = (float)($input['direct_purchase_price'] ?? 0);
+    $isDirectPurchase = !empty($input['is_direct_purchase']) ? 1 : 0;
     $stmt->execute([
         ':name' => trim($input['name']),
-        ':type' => $input['type'] === 'getraenk' ? 'getraenk' : 'gericht',
         ':price' => $directPrice,
+        ':is_direct_purchase' => $isDirectPurchase,
         ':target' => (int)$input['target_qty'],
         ':stock' => (int)$input['stock_qty'],
     ]);
@@ -69,13 +64,14 @@ function createProduct(array $input): void
 
 function updateProduct(int $id, array $input): void
 {
-    $stmt = db()->prepare('UPDATE products SET name = :name, type = :type, direct_purchase_price = :price, target_qty = :target, stock_qty = :stock WHERE id = :id');
-    $directPrice = $input['direct_purchase_price'] !== '' ? (float)$input['direct_purchase_price'] : null;
+    $stmt = db()->prepare('UPDATE products SET name = :name, direct_purchase_price = :price, is_direct_purchase = :is_direct_purchase, target_qty = :target, stock_qty = :stock WHERE id = :id');
+    $directPrice = (float)($input['direct_purchase_price'] ?? 0);
+    $isDirectPurchase = !empty($input['is_direct_purchase']) ? 1 : 0;
     $stmt->execute([
         ':id' => $id,
         ':name' => trim($input['name']),
-        ':type' => $input['type'] === 'getraenk' ? 'getraenk' : 'gericht',
         ':price' => $directPrice,
+        ':is_direct_purchase' => $isDirectPurchase,
         ':target' => (int)$input['target_qty'],
         ':stock' => (int)$input['stock_qty'],
     ]);
@@ -97,7 +93,7 @@ function productById(int $id): ?array
 
 function recipeItemsByProduct(int $productId): array
 {
-    $stmt = db()->prepare('SELECT ri.*, i.name AS ingredient_name, i.unit, i.price_per_unit FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id WHERE ri.product_id = :id ORDER BY i.name');
+    $stmt = db()->prepare('SELECT ri.*, i.name AS ingredient_name, i.price_per_unit FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id WHERE ri.product_id = :id ORDER BY i.name');
     $stmt->execute([':id' => $productId]);
     return $stmt->fetchAll();
 }
@@ -131,11 +127,8 @@ function shoppingList(): array
         $ingredientNeeds[(int)$ingredient['id']] = [
             'id' => (int)$ingredient['id'],
             'name' => $ingredient['name'],
-            'unit' => $ingredient['unit'],
             'price_per_unit' => (float)$ingredient['price_per_unit'],
             'needed_qty' => 0,
-            'current_stock' => (float)$ingredient['stock_qty'],
-            'min_stock' => (float)$ingredient['min_stock_qty'],
         ];
     }
 
@@ -148,8 +141,8 @@ function shoppingList(): array
         }
 
         $recipe = recipeItemsByProduct((int)$product['id']);
-        if (count($recipe) === 0) {
-            $unitPrice = $product['direct_purchase_price'] !== null ? (float)$product['direct_purchase_price'] : (float)$product['calculated_recipe_price'];
+        if ((int)$product['is_direct_purchase'] === 1 || count($recipe) === 0) {
+            $unitPrice = (float)$product['direct_purchase_price'];
             $productPurchases[] = [
                 'name' => $product['name'],
                 'qty' => $missingProductQty,
@@ -167,12 +160,12 @@ function shoppingList(): array
 
     $ingredientPurchases = [];
     foreach ($ingredientNeeds as $need) {
-        $missing = max(0, $need['needed_qty'] + $need['min_stock'] - $need['current_stock']);
+        $missing = max(0, $need['needed_qty']);
         if ($missing > 0) {
             $ingredientPurchases[] = [
                 'name' => $need['name'],
                 'qty' => $missing,
-                'unit' => $need['unit'],
+                'unit' => 'Stk',
                 'unit_price' => $need['price_per_unit'],
                 'sum' => $missing * $need['price_per_unit'],
             ];

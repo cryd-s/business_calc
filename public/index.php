@@ -28,19 +28,19 @@ try {
 
     if ($action === 'product.create') {
         createProduct($_POST);
-        flash('Gericht/Getränk angelegt.');
+        flash('Gericht angelegt.');
         header('Location: ?view=products');
         exit;
     }
     if ($action === 'product.update') {
         updateProduct((int)$_POST['id'], $_POST);
-        flash('Gericht/Getränk aktualisiert.');
+        flash('Gericht aktualisiert.');
         header('Location: ?view=products');
         exit;
     }
     if ($action === 'product.delete') {
         deleteProduct((int)$_POST['id']);
-        flash('Gericht/Getränk gelöscht.');
+        flash('Gericht gelöscht.');
         header('Location: ?view=products');
         exit;
     }
@@ -199,7 +199,7 @@ $message = flash();
     <nav class="pill-nav">
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte/Getränke</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
     </nav>
 
@@ -216,15 +216,12 @@ $message = flash();
     <form method="post" class="grid">
         <input type="hidden" name="action" value="ingredient.create">
         <div><label>Name<input required name="name"></label></div>
-        <div><label>Preis / Einheit<input required step="0.01" type="number" name="price_per_unit"></label></div>
-        <div><label>Einheit<input name="unit" placeholder="kg, l, Stk"></label></div>
-        <div><label>Lagerbestand<input step="0.01" type="number" name="stock_qty" value="0"></label></div>
-        <div><label>Mindestbestand<input step="0.01" type="number" name="min_stock_qty" value="0"></label></div>
+        <div><label>Preis pro Stück<input required step="0.01" type="number" name="price_per_unit"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Name</th><th>Preis</th><th>Einheit</th><th>Lager</th><th>Min.</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Name</th><th>Preis pro Stück</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($ingredients as $ingredient): ?>
             <tr>
@@ -233,9 +230,6 @@ $message = flash();
                     <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
                     <td><input name="name" value="<?= htmlspecialchars($ingredient['name']) ?>"></td>
                     <td><input type="number" step="0.01" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
-                    <td><input name="unit" value="<?= htmlspecialchars($ingredient['unit']) ?>"></td>
-                    <td><input type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
-                    <td><input type="number" step="0.01" name="min_stock_qty" value="<?= htmlspecialchars((string)$ingredient['min_stock_qty']) ?>"></td>
                     <td>
                         <button>Speichern</button>
                 </form>
@@ -253,19 +247,19 @@ $message = flash();
 
 <?php elseif ($view === 'products'): ?>
 <section>
-    <h2>Gerichte & Getränke</h2>
+    <h2>Gerichte</h2>
     <form method="post" class="grid">
         <input type="hidden" name="action" value="product.create">
         <div><label>Name<input required name="name"></label></div>
-        <div><label>Typ<select name="type"><option value="gericht">Gericht</option><option value="getraenk">Getränk</option></select></label></div>
-        <div><label>Direkt-Einkaufspreis<input step="0.01" type="number" name="direct_purchase_price" placeholder="Optional"></label></div>
+        <div><label>Direktgericht <input type="checkbox" name="is_direct_purchase" value="1"></label></div>
+        <div><label>Direkt-Einkaufspreis pro Stück<input step="0.01" type="number" name="direct_purchase_price" value="0"></label></div>
         <div><label>Zielbestand<input type="number" name="target_qty" value="0"></label></div>
         <div><label>Ist-Bestand<input type="number" name="stock_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Name</th><th>Typ</th><th>Ziel</th><th>Ist</th><th>Preis pro Stück</th><th>Rezept</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Name</th><th>Direktgericht</th><th>Ziel</th><th>Ist</th><th>Preis pro Stück</th><th>Rezept</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($products as $product): ?>
             <tr>
@@ -273,12 +267,7 @@ $message = flash();
                     <input type="hidden" name="action" value="product.update">
                     <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
                     <td><input name="name" value="<?= htmlspecialchars($product['name']) ?>"></td>
-                    <td>
-                        <select name="type">
-                            <option value="gericht" <?= $product['type'] === 'gericht' ? 'selected' : '' ?>>Gericht</option>
-                            <option value="getraenk" <?= $product['type'] === 'getraenk' ? 'selected' : '' ?>>Getränk</option>
-                        </select>
-                    </td>
+                    <td><input type="checkbox" name="is_direct_purchase" value="1" <?= (int)$product['is_direct_purchase'] === 1 ? 'checked' : '' ?>></td>
                     <td><input type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
                     <td><input type="number" name="stock_qty" value="<?= (int)$product['stock_qty'] ?>"></td>
                     <td><input type="number" step="0.01" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>" placeholder="optional"></td>
@@ -304,29 +293,28 @@ $message = flash();
 <?php elseif ($view === 'recipe' && $productForRecipe): ?>
 <section>
     <h2>Rezept für <?= htmlspecialchars($productForRecipe['name']) ?></h2>
-    <p>Leeres Rezept = direkt einkaufbares Produkt (z. B. Getränke/Fertigwaren).</p>
+    <p>Hier legst du fest, wie viele Stück einer Zutat für ein Gericht benötigt werden.</p>
     <form method="post" class="grid" style="grid-template-columns: 3fr 2fr 1fr;">
         <input type="hidden" name="action" value="recipe.upsert">
         <input type="hidden" name="product_id" value="<?= (int)$productForRecipe['id'] ?>">
         <div><label>Zutat
             <select name="ingredient_id">
                 <?php foreach ($ingredients as $ingredient): ?>
-                    <option value="<?= (int)$ingredient['id'] ?>"><?= htmlspecialchars($ingredient['name']) ?> (<?= htmlspecialchars($ingredient['unit']) ?>)</option>
+                    <option value="<?= (int)$ingredient['id'] ?>"><?= htmlspecialchars($ingredient['name']) ?></option>
                 <?php endforeach; ?>
             </select>
         </label></div>
-        <div><label>Menge pro Produkt<input required type="number" step="0.01" name="qty_per_product"></label></div>
+        <div><label>Stück pro Gericht<input required type="number" step="0.01" name="qty_per_product"></label></div>
         <div><button>Speichern</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Zutat</th><th>Menge</th><th>Einheit</th><th>Kosten/Produkt</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Zutat</th><th>Stück</th><th>Kosten/Gericht</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($recipeItems as $item): ?>
             <tr>
                 <td><?= htmlspecialchars($item['ingredient_name']) ?></td>
                 <td><?= number_format((float)$item['qty_per_product'], 2, ',', '.') ?></td>
-                <td><?= htmlspecialchars($item['unit']) ?></td>
                 <td><?= number_format((float)$item['qty_per_product'] * (float)$item['price_per_unit'], 2, ',', '.') ?> €</td>
                 <td>
                     <form method="post">
@@ -345,10 +333,10 @@ $message = flash();
 <?php else: ?>
 <section>
     <h2>Dashboard</h2>
-    <p>Lege zuerst Zutaten und Gerichte/Getränke an. Hinterlege Ziel- und Ist-Bestand.</p>
+    <p>Lege zuerst Zutaten und Gerichte an. Hinterlege Ziel- und Ist-Bestand.</p>
     <ul>
         <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
-        <li>Anzahl Gerichte/Getränke: <?= count($products) ?></li>
+        <li>Anzahl Gerichte: <?= count($products) ?></li>
         <li>Aktueller Einkaufsbedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</li>
     </ul>
 </section>
@@ -360,7 +348,7 @@ $message = flash();
             <h2>Live Überblick</h2>
             <ul>
                 <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
-                <li>Anzahl Gerichte/Getränke: <?= count($products) ?></li>
+                <li>Anzahl Gerichte: <?= count($products) ?></li>
                 <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</li>
             </ul>
         </section>
@@ -370,7 +358,7 @@ $message = flash();
     <h2>Einkaufsliste (automatisch)</h2>
     <h3>Fehlende Zutaten</h3>
     <table>
-        <thead><tr><th>Zutat</th><th>Menge</th><th>Einheit</th><th>Preis / Einheit</th><th>Summe</th></tr></thead>
+        <thead><tr><th>Zutat</th><th>Stück</th><th>Einheit</th><th>Preis / Stück</th><th>Summe</th></tr></thead>
         <tbody>
         <?php foreach ($shoppingList['ingredient_purchases'] as $row): ?>
             <tr>
@@ -387,7 +375,7 @@ $message = flash();
         </tbody>
     </table>
 
-    <h3>Direkt einzukaufende Gerichte/Getränke</h3>
+    <h3>Direkt einzukaufende Gerichte</h3>
     <table>
         <thead><tr><th>Artikel</th><th>Menge</th><th>Preis / Stück</th><th>Summe</th></tr></thead>
         <tbody>
