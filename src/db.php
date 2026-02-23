@@ -60,17 +60,14 @@ CREATE TABLE IF NOT EXISTS ingredients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(120) NOT NULL UNIQUE,
     price_per_unit DECIMAL(10,2) NOT NULL,
-    unit VARCHAR(30) NOT NULL DEFAULT 'Stk',
-    stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
-    min_stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(120) NOT NULL UNIQUE,
-    type VARCHAR(20) NOT NULL CHECK (type IN ('gericht','getraenk')),
-    direct_purchase_price DECIMAL(10,2) NULL,
+    direct_purchase_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+    is_direct_purchase INTEGER NOT NULL DEFAULT 0,
     target_qty INT NOT NULL DEFAULT 0,
     stock_qty INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -92,17 +89,14 @@ CREATE TABLE IF NOT EXISTS ingredients (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
     price_per_unit DECIMAL(10,2) NOT NULL,
-    unit VARCHAR(30) NOT NULL DEFAULT 'Stk',
-    stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
-    min_stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS products (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
-    type ENUM('gericht','getraenk') NOT NULL,
-    direct_purchase_price DECIMAL(10,2) NULL,
+    direct_purchase_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+    is_direct_purchase TINYINT(1) NOT NULL DEFAULT 0,
     target_qty INT NOT NULL DEFAULT 0,
     stock_qty INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
