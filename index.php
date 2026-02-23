@@ -208,7 +208,7 @@ try {
         requireAdmin();
         setUserApproval((string)($_POST['discord_id'] ?? ''), true);
         flash('Mitarbeiter freigeschaltet.');
-        header('Location: ?view=admin&admin_tab=employees');
+        header('Location: ?view=employees');
         exit;
     }
 
@@ -216,7 +216,7 @@ try {
         requireAdmin();
         setUserApproval((string)($_POST['discord_id'] ?? ''), false);
         flash('Freigabe entfernt.');
-        header('Location: ?view=admin&admin_tab=employees');
+        header('Location: ?view=employees');
         exit;
     }
 
@@ -224,7 +224,7 @@ try {
         requireAdmin();
         setUserAdmin((string)($_POST['discord_id'] ?? ''), true);
         flash('Admin-Berechtigung erteilt.');
-        header('Location: ?view=admin&admin_tab=employees');
+        header('Location: ?view=employees');
         exit;
     }
 
@@ -232,7 +232,15 @@ try {
         requireAdmin();
         setUserAdmin((string)($_POST['discord_id'] ?? ''), false);
         flash('Admin-Berechtigung entfernt.');
-        header('Location: ?view=admin&admin_tab=employees');
+        header('Location: ?view=employees');
+        exit;
+    }
+
+    if ($action === 'admin.user.rename') {
+        requireAdmin();
+        setUserDisplayName((string)($_POST['discord_id'] ?? ''), (string)($_POST['display_name'] ?? ''));
+        flash('Mitarbeitername aktualisiert.');
+        header('Location: ?view=employees');
         exit;
     }
 
@@ -329,14 +337,14 @@ try {
             requireAdmin();
             updateCompanyName((string)($_POST['company_name'] ?? ''));
             flash('Unternehmensname gespeichert.');
-            header('Location: ?view=admin&admin_tab=options');
+            header('Location: ?view=options');
             exit;
         }
         if ($action === 'options.webhook.update') {
             requireAdmin();
             updateDiscordWebhookUrl((string)($_POST['discord_webhook_url'] ?? ''));
             flash('Discord Webhook gespeichert.');
-            header('Location: ?view=admin&admin_tab=options');
+            header('Location: ?view=options');
             exit;
         }
         if ($action === 'shopping.complete') {
@@ -424,7 +432,7 @@ if (!$loggedIn && !in_array($view, ['login', 'oauth-callback'], true)) {
     $view = 'login';
 }
 
-$adminOnlyViews = ['ingredients', 'products', 'recipe'];
+$adminOnlyViews = ['ingredients', 'products', 'recipe', 'options', 'employees'];
 if ($loggedIn && !isAdminUser($user) && in_array($view, $adminOnlyViews, true)) {
     flash('Zutaten und Gerichte sind nur für Admins sichtbar.');
     $view = 'dashboard';
@@ -465,11 +473,6 @@ $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
 $discordLoginUrl = discordAuthUrl();
 $message = flash();
 
-$adminTab = (string)($_GET['admin_tab'] ?? 'employees');
-$allowedAdminTabs = ['options', 'employees', 'products', 'ingredients'];
-if (!in_array($adminTab, $allowedAdminTabs, true)) {
-    $adminTab = 'employees';
-}
 
 ?>
 <!doctype html>
@@ -531,31 +534,6 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
             border-radius: 999px;
             background: rgba(8, 14, 29, 0.8);
             border: 1px solid var(--panel-border);
-        }
-        .admin-nav-wrapper {
-            margin-top: 10px;
-            display: flex;
-            align-items: flex-start;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .admin-nav-wrapper details {
-            width: 100%;
-        }
-        .admin-nav-wrapper summary {
-            list-style: none;
-            cursor: pointer;
-            width: fit-content;
-        }
-        .admin-nav-wrapper summary::-webkit-details-marker {
-            display: none;
-        }
-        .admin-nav-label {
-            color: var(--muted);
-            font-weight: 600;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            font-size: 0.82rem;
         }
         nav a {
             text-decoration: none;
@@ -645,6 +623,9 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <?php if ($loggedIn): ?>
             <div style="display:flex; align-items:center; gap:10px;">
                 <small>Angemeldet als <?= htmlspecialchars((string)($user['display_name'] ?? $user['discord_id'] ?? '')) ?></small>
+                <?php if (isAdminUser($user)): ?>
+                    <a href="?view=employees"><button type="button">Admin</button></a>
+                <?php endif; ?>
                 <form method="post" style="margin:0;">
                     <input type="hidden" name="action" value="auth.logout">
                     <button type="submit">Logout</button>
@@ -661,19 +642,6 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     </nav>
     <?php endif; ?>
 
-    <?php if ($loggedIn && isAdminUser($user)): ?>
-    <div class="admin-nav-wrapper">
-        <details>
-            <summary><button type="button">Admin-Menü</button></summary>
-            <nav class="pill-nav" style="margin-top:8px;">
-                <a class="<?= ($view === 'ingredients') || ($view === 'admin' && $adminTab === 'ingredients') ? 'active' : '' ?>" href="?view=admin&admin_tab=ingredients">Zutaten</a>
-                <a class="<?= ($view === 'products') || ($view === 'admin' && $adminTab === 'products') ? 'active' : '' ?>" href="?view=admin&admin_tab=products">Rezepte</a>
-                <a class="<?= ($view === 'options') || ($view === 'admin' && $adminTab === 'options') ? 'active' : '' ?>" href="?view=admin&admin_tab=options">Optionen</a>
-                <a class="<?= $view === 'admin' && $adminTab === 'employees' ? 'active' : '' ?>" href="?view=admin&admin_tab=employees">Mitarbeiter</a>
-            </nav>
-        </details>
-    </div>
-    <?php endif; ?>
 
 <?php if ($message): ?>
     <p class="flash"><?= htmlspecialchars($message) ?></p>
@@ -693,10 +661,17 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     <?php endif; ?>
 </section>
 
-<?php elseif ($view === 'admin' && isAdminUser($user) && $adminTab === 'employees'): ?>
+<?php elseif ($view === 'employees' && isAdminUser($user)): ?>
 <section>
     <h2>Admin: Mitarbeiter verwalten</h2>
+    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <p>Hier siehst du alle Nutzer, die sich via Discord angemeldet haben.</p>
+    <nav class="pill-nav" style="margin-top:8px;">
+        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
+        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
+        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+    </nav>
     <table>
         <thead><tr><th>Discord ID</th><th>Name</th><th>Freigabe</th><th>Admin</th><th>Aktion</th></tr></thead>
         <tbody>
@@ -734,6 +709,12 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                                 <button type="submit">Admin freischalten</button>
                             </form>
                         <?php endif; ?>
+                        <form method="post" style="display:inline-flex; gap:6px; align-items:center; margin-top:6px;">
+                            <input type="hidden" name="action" value="admin.user.rename">
+                            <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
+                            <input type="text" name="display_name" value="<?= htmlspecialchars($entry['display_name']) ?>" placeholder="Name für Nachweis" style="width:180px;">
+                            <button type="submit">Namen speichern</button>
+                        </form>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -742,9 +723,16 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     </table>
 </section>
 
-<?php elseif ($view === 'ingredients' || ($view === 'admin' && isAdminUser($user) && $adminTab === 'ingredients')): ?>
+<?php elseif ($view === 'ingredients' && isAdminUser($user)): ?>
 <section>
+    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
+        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
+        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
+        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+    </nav>
     <h2>Zutaten</h2>
+    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <form method="post" class="grid">
         <input type="hidden" name="action" value="ingredient.create">
         <div><label>Name<input required name="name"></label></div>
@@ -782,9 +770,16 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     </table>
 </section>
 
-<?php elseif ($view === 'products' || ($view === 'admin' && isAdminUser($user) && $adminTab === 'products')): ?>
+<?php elseif ($view === 'products' && isAdminUser($user)): ?>
 <section>
+    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
+        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
+        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
+        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+    </nav>
     <h2>Direktvermarktung</h2>
+    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <p>Direktes Gericht: Preis wird manuell gepflegt.</p>
     <form method="post" class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
         <input type="hidden" name="action" value="product.create">
@@ -935,9 +930,16 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     </table>
 </section>
 
-<?php elseif (($view === 'options' && isAdminUser($user)) || ($view === 'admin' && isAdminUser($user) && $adminTab === 'options')): ?>
+<?php elseif ($view === 'options' && isAdminUser($user)): ?>
 <section>
+    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
+        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
+        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
+        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+    </nav>
     <h2>Optionen</h2>
+    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <form method="post" class="grid" style="grid-template-columns: 3fr 1fr;">
         <input type="hidden" name="action" value="options.company.update">
         <div><label>Unternehmensname<input name="company_name" value="<?= htmlspecialchars($companyName) ?>" placeholder="z. B. Muster GmbH"></label></div>

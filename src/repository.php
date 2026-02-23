@@ -33,7 +33,10 @@ function createOrUpdateUserAccess(string $discordId, string $displayName): array
 INSERT INTO user_access (discord_id, display_name, is_admin, is_approved)
 VALUES (:discord_id, :display_name, :is_admin, :is_approved)
 ON CONFLICT(discord_id) DO UPDATE SET
-    display_name = excluded.display_name,
+    display_name = CASE
+        WHEN TRIM(user_access.display_name) = '' THEN excluded.display_name
+        ELSE user_access.display_name
+    END,
     is_admin = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_admin END,
     is_approved = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_approved END,
     updated_at = CURRENT_TIMESTAMP
@@ -43,7 +46,7 @@ SQL;
 INSERT INTO user_access (discord_id, display_name, is_admin, is_approved)
 VALUES (:discord_id, :display_name, :is_admin, :is_approved)
 ON DUPLICATE KEY UPDATE
-    display_name = VALUES(display_name),
+    display_name = IF(TRIM(display_name) = '', VALUES(display_name), display_name),
     is_admin = IF(discord_id = :admin_id, 1, is_admin),
     is_approved = IF(discord_id = :admin_id, 1, is_approved)
 SQL;
@@ -64,6 +67,25 @@ SQL;
     }
 
     return $user;
+}
+
+function setUserDisplayName(string $discordId, string $displayName): void
+{
+    $discordId = trim($discordId);
+    if ($discordId === '') {
+        throw new InvalidArgumentException('Discord ID fehlt.');
+    }
+
+    $displayName = trim($displayName);
+    if ($displayName === '') {
+        throw new InvalidArgumentException('Name darf nicht leer sein.');
+    }
+
+    $stmt = db()->prepare('UPDATE user_access SET display_name = :display_name WHERE discord_id = :discord_id');
+    $stmt->execute([
+        ':display_name' => $displayName,
+        ':discord_id' => $discordId,
+    ]);
 }
 
 function allUserAccessEntries(): array
