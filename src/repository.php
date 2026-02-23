@@ -210,6 +210,7 @@ function shoppingList(): array
             'id' => (int)$ingredient['id'],
             'name' => $ingredient['name'],
             'price_per_unit' => (float)$ingredient['price_per_unit'],
+            'stock_qty' => (float)$ingredient['stock_qty'],
             'needed_qty' => 0,
         ];
     }
@@ -242,7 +243,7 @@ function shoppingList(): array
 
     $ingredientPurchases = [];
     foreach ($ingredientNeeds as $need) {
-        $missing = max(0, $need['needed_qty']);
+        $missing = max(0, $need['needed_qty'] - $need['stock_qty']);
         if ($missing > 0) {
             $ingredientPurchases[] = [
                 'name' => $need['name'],
