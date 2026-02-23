@@ -298,12 +298,30 @@ try {
 
         if ($action === 'ingredient.create') {
             createIngredient($_POST);
+            $ingredientName = trim((string)($_POST['name'] ?? ''));
+            $ingredientPrice = (float)($_POST['price_per_unit'] ?? 0);
+            writeAuditLog(currentUser(), 'ingredient.create', $ingredientName, 'Preis pro Einheit: ' . number_format($ingredientPrice, 2, ',', '.'));
             flash('Zutat angelegt.');
             header('Location: ?view=ingredients');
             exit;
         }
         if ($action === 'ingredient.update') {
-            updateIngredient((int)$_POST['id'], $_POST);
+            $ingredientId = (int)$_POST['id'];
+            $before = ingredientById($ingredientId);
+            updateIngredient($ingredientId, $_POST);
+            $after = ingredientById($ingredientId);
+            if (is_array($after)) {
+                $beforePrice = is_array($before) ? (float)($before['price_per_unit'] ?? 0) : null;
+                $afterPrice = (float)($after['price_per_unit'] ?? 0);
+                $details = [];
+                if ($beforePrice === null || abs($beforePrice - $afterPrice) > 0.00001) {
+                    $details[] = 'Preis: ' . ($beforePrice === null ? 'neu' : number_format($beforePrice, 2, ',', '.')) . ' → ' . number_format($afterPrice, 2, ',', '.');
+                }
+                if (is_array($before) && trim((string)($before['name'] ?? '')) !== trim((string)($after['name'] ?? ''))) {
+                    $details[] = 'Name geändert';
+                }
+                writeAuditLog(currentUser(), 'ingredient.update', (string)($after['name'] ?? ''), $details !== [] ? implode(' | ', $details) : 'Zutat aktualisiert');
+            }
             flash('Zutat aktualisiert.');
             header('Location: ?view=ingredients');
             exit;
@@ -315,7 +333,10 @@ try {
             exit;
         }
         if ($action === 'ingredient.delete') {
-            deleteIngredient((int)$_POST['id']);
+            $ingredientId = (int)$_POST['id'];
+            $ingredient = ingredientById($ingredientId);
+            deleteIngredient($ingredientId);
+            writeAuditLog(currentUser(), 'ingredient.delete', (string)($ingredient['name'] ?? ''), 'Zutat gelöscht');
             flash('Zutat gelöscht.');
             header('Location: ?view=ingredients');
             exit;
@@ -323,12 +344,17 @@ try {
 
         if ($action === 'product.create') {
             createProduct($_POST);
+            $productName = trim((string)($_POST['name'] ?? ''));
+            writeAuditLog(currentUser(), 'product.create', $productName, 'Gericht angelegt');
             flash('Gericht angelegt.');
             header('Location: ?view=products');
             exit;
         }
         if ($action === 'product.update') {
-            updateProduct((int)$_POST['id'], $_POST);
+            $productId = (int)$_POST['id'];
+            updateProduct($productId, $_POST);
+            $product = productById($productId);
+            writeAuditLog(currentUser(), 'product.update', (string)($product['name'] ?? ''), 'Gericht aktualisiert');
             flash('Gericht aktualisiert.');
             header('Location: ?view=products');
             exit;
@@ -340,27 +366,49 @@ try {
             exit;
         }
         if ($action === 'product.delete') {
-            deleteProduct((int)$_POST['id']);
+            $productId = (int)$_POST['id'];
+            $product = productById($productId);
+            deleteProduct($productId);
+            writeAuditLog(currentUser(), 'product.delete', (string)($product['name'] ?? ''), 'Gericht gelöscht');
             flash('Gericht gelöscht.');
             header('Location: ?view=products');
             exit;
         }
 
         if ($action === 'recipe.upsert') {
-            upsertRecipeItem((int)$_POST['product_id'], (int)$_POST['ingredient_id'], (float)$_POST['qty_per_product']);
+            $productId = (int)$_POST['product_id'];
+            $ingredientId = (int)$_POST['ingredient_id'];
+            $before = recipeItemByProductAndIngredient($productId, $ingredientId);
+            upsertRecipeItem($productId, $ingredientId, (float)$_POST['qty_per_product']);
+            $after = recipeItemByProductAndIngredient($productId, $ingredientId);
+            $actionKey = is_array($before) ? 'recipe.update' : 'recipe.create';
+            if (is_array($after)) {
+                $beforeQty = is_array($before) ? (float)($before['qty_per_product'] ?? 0) : null;
+                $afterQty = (float)($after['qty_per_product'] ?? 0);
+                $details = 'Gericht: ' . (string)($after['product_name'] ?? '') . ' | Menge: ' . ($beforeQty === null ? 'neu' : number_format($beforeQty, 3, ',', '.')) . ' → ' . number_format($afterQty, 3, ',', '.');
+                writeAuditLog(currentUser(), $actionKey, (string)($after['ingredient_name'] ?? ''), $details);
+            }
             flash('Rezeptposition gespeichert.');
             header('Location: ?view=recipe&product_id=' . (int)$_POST['product_id']);
             exit;
         }
         if ($action === 'recipe.assign') {
-            assignRecipeItems((int)$_POST['product_id'], $_POST['ingredient_qty'] ?? []);
+            $productId = (int)$_POST['product_id'];
+            $product = productById($productId);
+            assignRecipeItems($productId, $_POST['ingredient_qty'] ?? []);
+            writeAuditLog(currentUser(), 'recipe.assign', (string)($product['name'] ?? ''), 'Zutaten für Gericht zugewiesen/aktualisiert');
             flash('Zutaten für das Gericht zugewiesen.');
             header('Location: ?view=products');
             exit;
         }
         if ($action === 'recipe.delete') {
             $productId = (int)$_POST['product_id'];
+            $recipeItem = recipeItemById((int)$_POST['id']);
             deleteRecipeItem((int)$_POST['id']);
+            if (is_array($recipeItem)) {
+                $details = 'Gericht: ' . (string)($recipeItem['product_name'] ?? '') . ' | Menge: ' . number_format((float)($recipeItem['qty_per_product'] ?? 0), 3, ',', '.');
+                writeAuditLog(currentUser(), 'recipe.delete', (string)($recipeItem['ingredient_name'] ?? ''), $details);
+            }
             flash('Rezeptposition gelöscht.');
             header('Location: ?view=recipe&product_id=' . $productId);
             exit;
