@@ -424,8 +424,9 @@ function shoppingList(): array
     ];
 }
 
-function completeShoppingListAndUpdateInventory(): void
+function completeShoppingListAndUpdateInventory(string $completedByDiscordId = ''): void
 {
+    $shoppingListSnapshot = shoppingList();
     $products = allProducts();
     $ingredients = allIngredients();
 
@@ -458,6 +459,23 @@ function completeShoppingListAndUpdateInventory(): void
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        $actorDiscordId = trim($completedByDiscordId);
+        $historyStmt = $pdo->prepare('INSERT INTO shopping_history (completed_by_discord_id) VALUES (:completed_by_discord_id)');
+        $historyStmt->execute([':completed_by_discord_id' => $actorDiscordId]);
+        $shoppingHistoryId = (int)$pdo->lastInsertId();
+
+        $historyItemStmt = $pdo->prepare('INSERT INTO shopping_history_items (shopping_history_id, item_type, item_name, qty, unit, total_cost) VALUES (:shopping_history_id, :item_type, :item_name, :qty, :unit, :total_cost)');
+        foreach ($shoppingListSnapshot['items'] as $shoppingItem) {
+            $historyItemStmt->execute([
+                ':shopping_history_id' => $shoppingHistoryId,
+                ':item_type' => (string)($shoppingItem['type'] ?? ''),
+                ':item_name' => (string)($shoppingItem['name'] ?? ''),
+                ':qty' => (float)($shoppingItem['qty'] ?? 0),
+                ':unit' => (string)($shoppingItem['unit'] ?? 'Stk'),
+                ':total_cost' => (float)($shoppingItem['sum'] ?? 0),
+            ]);
+        }
+
         foreach ($directProductMissingQty as $productId => $missingQty) {
             $stmt = $pdo->prepare('UPDATE products SET stock_qty = stock_qty + :qty WHERE id = :id');
             $stmt->execute([
@@ -494,6 +512,46 @@ function completeShoppingListAndUpdateInventory(): void
 
         throw $e;
     }
+}
+
+function shoppingStats(): array
+{
+    $sql = <<<'SQL'
+SELECT item_name,
+       item_type,
+       SUM(qty) AS total_qty,
+       COUNT(DISTINCT shopping_history_id) AS shopping_runs,
+       CAST(julianday('now') - julianday(MIN(sh.completed_at)) AS INTEGER) + 1 AS days_span,
+       SUM(total_cost) AS total_cost
+FROM shopping_history_items shi
+JOIN shopping_history sh ON sh.id = shi.shopping_history_id
+GROUP BY item_name, item_type
+ORDER BY total_qty DESC, item_name ASC
+SQL;
+
+    if (db()->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+        $sql = <<<'SQL'
+SELECT item_name,
+       item_type,
+       SUM(qty) AS total_qty,
+       COUNT(DISTINCT shopping_history_id) AS shopping_runs,
+       DATEDIFF(CURDATE(), DATE(MIN(sh.completed_at))) + 1 AS days_span,
+       SUM(total_cost) AS total_cost
+FROM shopping_history_items shi
+JOIN shopping_history sh ON sh.id = shi.shopping_history_id
+GROUP BY item_name, item_type
+ORDER BY total_qty DESC, item_name ASC
+SQL;
+    }
+
+    $rows = db()->query($sql)->fetchAll();
+    foreach ($rows as &$row) {
+        $daysSpan = max(1, (int)($row['days_span'] ?? 1));
+        $row['avg_per_day'] = (float)$row['total_qty'] / $daysSpan;
+    }
+    unset($row);
+
+    return $rows;
 }
 
 function companyName(): string
