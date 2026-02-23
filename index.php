@@ -217,7 +217,9 @@ try {
 
     if ($action === 'admin.user.approve') {
         requireAdmin();
-        setUserApproval((string)($_POST['discord_id'] ?? ''), true);
+        $targetDiscordId = (string)($_POST['discord_id'] ?? '');
+        setUserApproval($targetDiscordId, true);
+        writeAuditLog(currentUser(), 'admin.user.approve', $targetDiscordId, 'Mitarbeiter freigeschaltet');
         flash('Mitarbeiter freigeschaltet.');
         header('Location: ?view=employees');
         exit;
@@ -225,7 +227,9 @@ try {
 
     if ($action === 'admin.user.revoke') {
         requireAdmin();
-        setUserApproval((string)($_POST['discord_id'] ?? ''), false);
+        $targetDiscordId = (string)($_POST['discord_id'] ?? '');
+        setUserApproval($targetDiscordId, false);
+        writeAuditLog(currentUser(), 'admin.user.revoke', $targetDiscordId, 'Freigabe entfernt');
         flash('Freigabe entfernt.');
         header('Location: ?view=employees');
         exit;
@@ -233,7 +237,9 @@ try {
 
     if ($action === 'admin.user.make_admin') {
         requireAdmin();
-        setUserAdmin((string)($_POST['discord_id'] ?? ''), true);
+        $targetDiscordId = (string)($_POST['discord_id'] ?? '');
+        setUserAdmin($targetDiscordId, true);
+        writeAuditLog(currentUser(), 'admin.user.make_admin', $targetDiscordId, 'Admin-Berechtigung erteilt');
         flash('Admin-Berechtigung erteilt.');
         header('Location: ?view=employees');
         exit;
@@ -241,7 +247,9 @@ try {
 
     if ($action === 'admin.user.remove_admin') {
         requireAdmin();
-        setUserAdmin((string)($_POST['discord_id'] ?? ''), false);
+        $targetDiscordId = (string)($_POST['discord_id'] ?? '');
+        setUserAdmin($targetDiscordId, false);
+        writeAuditLog(currentUser(), 'admin.user.remove_admin', $targetDiscordId, 'Admin-Berechtigung entfernt');
         flash('Admin-Berechtigung entfernt.');
         header('Location: ?view=employees');
         exit;
@@ -249,7 +257,9 @@ try {
 
     if ($action === 'admin.user.delete') {
         requireAdmin();
-        deleteUserAccess((string)($_POST['discord_id'] ?? ''));
+        $targetDiscordId = (string)($_POST['discord_id'] ?? '');
+        deleteUserAccess($targetDiscordId);
+        writeAuditLog(currentUser(), 'admin.user.delete', $targetDiscordId, 'Mitarbeiter gelöscht');
         flash('Mitarbeiter gelöscht.');
         header('Location: ?view=employees');
         exit;
@@ -257,7 +267,10 @@ try {
 
     if ($action === 'admin.user.rename') {
         requireAdmin();
-        setUserDisplayName((string)($_POST['discord_id'] ?? ''), (string)($_POST['display_name'] ?? ''));
+        $targetDiscordId = (string)($_POST['discord_id'] ?? '');
+        $newDisplayName = (string)($_POST['display_name'] ?? '');
+        setUserDisplayName($targetDiscordId, $newDisplayName);
+        writeAuditLog(currentUser(), 'admin.user.rename', $targetDiscordId, 'Neuer Name: ' . trim($newDisplayName));
         flash('Mitarbeitername aktualisiert.');
         header('Location: ?view=employees');
         exit;
@@ -354,14 +367,19 @@ try {
         }
         if ($action === 'options.company.update') {
             requireAdmin();
-            updateCompanyName((string)($_POST['company_name'] ?? ''));
+            $newCompanyName = (string)($_POST['company_name'] ?? '');
+            updateCompanyName($newCompanyName);
+            writeAuditLog(currentUser(), 'options.company.update', '', 'Unternehmensname gesetzt auf: ' . trim($newCompanyName));
             flash('Unternehmensname gespeichert.');
             header('Location: ?view=options');
             exit;
         }
         if ($action === 'options.webhook.update') {
             requireAdmin();
-            updateDiscordWebhookUrl((string)($_POST['discord_webhook_url'] ?? ''));
+            $newWebhookUrl = (string)($_POST['discord_webhook_url'] ?? '');
+            updateDiscordWebhookUrl($newWebhookUrl);
+            $urlInfo = trim($newWebhookUrl) === '' ? 'leer' : 'gesetzt';
+            writeAuditLog(currentUser(), 'options.webhook.update', '', 'Discord Webhook ' . $urlInfo);
             flash('Discord Webhook gespeichert.');
             header('Location: ?view=options');
             exit;
@@ -453,7 +471,7 @@ if (!$loggedIn && !in_array($view, ['login', 'oauth-callback'], true)) {
     $view = 'login';
 }
 
-$adminOnlyViews = ['ingredients', 'products', 'recipe', 'options', 'employees'];
+$adminOnlyViews = ['ingredients', 'products', 'recipe', 'options', 'employees', 'auditlog'];
 if ($loggedIn && !isAdminUser($user) && in_array($view, $adminOnlyViews, true)) {
     flash('Zutaten und Gerichte sind nur für Admins sichtbar.');
     $view = 'dashboard';
@@ -492,10 +510,11 @@ $discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
 $productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
 $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
+$auditLogEntries = ($loggedIn && isAdminUser($user)) ? auditLogEntries(250) : [];
 $discordLoginUrl = discordAuthUrl();
 $message = flash();
-$isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['employees', 'recipe', 'options'], true);
-$singleColumnViews = ['login', 'employees', 'recipe', 'options'];
+$isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['employees', 'recipe', 'options', 'auditlog'], true);
+$singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 
 
 ?>
@@ -694,6 +713,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
     </nav>
     <table>
         <thead><tr><th>Discord ID</th><th>Name</th><th>Freigabe</th><th>Admin</th><th>Aktion</th></tr></thead>
@@ -758,6 +778,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
     </nav>
     <h2>Zutaten</h2>
     <form method="post" class="grid">
@@ -803,6 +824,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
     </nav>
     <h2>Direktvermarktung</h2>
     <p>Direktes Gericht: Preis wird manuell gepflegt.</p>
@@ -962,6 +984,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
     </nav>
     <h2>Optionen</h2>
     <form method="post" class="grid" style="grid-template-columns: 3fr 1fr;">
@@ -976,6 +999,38 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <div><button type="submit">Webhook speichern</button></div>
     </form>
 </section>
+
+<?php elseif ($view === 'auditlog' && isAdminUser($user)): ?>
+<section>
+    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
+        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
+        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
+        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
+    </nav>
+    <h2>Audit-Log</h2>
+    <p>Hier siehst du, wer was wann im Admin-Bereich geändert hat.</p>
+    <table>
+        <thead><tr><th>Zeitpunkt</th><th>Benutzer</th><th>Discord ID</th><th>Aktion</th><th>Ziel</th><th>Details</th></tr></thead>
+        <tbody>
+        <?php foreach ($auditLogEntries as $entry): ?>
+            <tr>
+                <td><?= htmlspecialchars((string)$entry['created_at']) ?></td>
+                <td><?= htmlspecialchars((string)$entry['actor_name']) ?></td>
+                <td><?= htmlspecialchars((string)$entry['actor_discord_id']) ?></td>
+                <td><?= htmlspecialchars((string)$entry['action_key']) ?></td>
+                <td><?= htmlspecialchars((string)$entry['target_value']) ?></td>
+                <td><?= htmlspecialchars((string)$entry['details']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        <?php if (count($auditLogEntries) === 0): ?>
+            <tr><td colspan="6">Noch keine Änderungen protokolliert.</td></tr>
+        <?php endif; ?>
+        </tbody>
+    </table>
+</section>
+
 <?php elseif ($view === 'shopping'): ?>
 <section>
     <h2>Einkaufsliste (automatisch)</h2>

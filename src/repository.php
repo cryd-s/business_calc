@@ -155,6 +155,64 @@ function setUserAdmin(string $discordId, bool $isAdmin): void
     ]);
 }
 
+
+function actorLabelFromUser(?array $actor): array
+{
+    $discordId = trim((string)($actor['discord_id'] ?? ''));
+    $displayName = trim((string)($actor['display_name'] ?? ''));
+
+    if ($discordId !== '') {
+        $user = findUserByDiscordId($discordId);
+        if (is_array($user)) {
+            $dbName = trim((string)($user['display_name'] ?? ''));
+            if ($dbName !== '') {
+                $displayName = $dbName;
+            }
+        }
+    }
+
+    if ($displayName === '') {
+        $displayName = 'Unbekannt';
+    }
+
+    return [
+        'discord_id' => $discordId,
+        'display_name' => $displayName,
+    ];
+}
+
+function writeAuditLog(?array $actor, string $actionKey, string $targetValue = '', string $details = ''): void
+{
+    $actorLabel = actorLabelFromUser($actor);
+
+    $stmt = db()->prepare(
+        'INSERT INTO audit_log (actor_discord_id, actor_name, action_key, target_value, details)
+         VALUES (:actor_discord_id, :actor_name, :action_key, :target_value, :details)'
+    );
+    $stmt->execute([
+        ':actor_discord_id' => $actorLabel['discord_id'],
+        ':actor_name' => $actorLabel['display_name'],
+        ':action_key' => trim($actionKey),
+        ':target_value' => trim($targetValue),
+        ':details' => trim($details),
+    ]);
+}
+
+function auditLogEntries(int $limit = 200): array
+{
+    $limit = max(1, min(500, $limit));
+    $stmt = db()->prepare(
+        'SELECT id, actor_discord_id, actor_name, action_key, target_value, details, created_at
+         FROM audit_log
+         ORDER BY id DESC
+         LIMIT :limit'
+    );
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+
+    return $stmt->fetchAll();
+}
+
 function allIngredients(): array
 {
     $stmt = db()->query('SELECT id, name, price_per_unit, stock_qty, created_at FROM ingredients ORDER BY name');
