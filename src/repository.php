@@ -51,8 +51,8 @@ SQL;
 function createProduct(array $input): void
 {
     $stmt = db()->prepare('INSERT INTO products (name, direct_purchase_price, is_direct_purchase, target_qty, stock_qty) VALUES (:name, :price, :is_direct_purchase, :target, :stock)');
-    $directPrice = (float)($input['direct_purchase_price'] ?? 0);
-    $isDirectPurchase = !empty($input['is_direct_purchase']) ? 1 : 0;
+    $isDirectPurchase = resolveProductType($input);
+    $directPrice = $isDirectPurchase === 1 ? (float)($input['direct_purchase_price'] ?? 0) : 0;
     $stmt->execute([
         ':name' => trim($input['name']),
         ':price' => $directPrice,
@@ -65,8 +65,8 @@ function createProduct(array $input): void
 function updateProduct(int $id, array $input): void
 {
     $stmt = db()->prepare('UPDATE products SET name = :name, direct_purchase_price = :price, is_direct_purchase = :is_direct_purchase, target_qty = :target, stock_qty = :stock WHERE id = :id');
-    $directPrice = (float)($input['direct_purchase_price'] ?? 0);
-    $isDirectPurchase = !empty($input['is_direct_purchase']) ? 1 : 0;
+    $isDirectPurchase = resolveProductType($input);
+    $directPrice = $isDirectPurchase === 1 ? (float)($input['direct_purchase_price'] ?? 0) : 0;
     $stmt->execute([
         ':id' => $id,
         ':name' => trim($input['name']),
@@ -75,6 +75,15 @@ function updateProduct(int $id, array $input): void
         ':target' => (int)$input['target_qty'],
         ':stock' => (int)$input['stock_qty'],
     ]);
+}
+
+function resolveProductType(array $input): int
+{
+    if (isset($input['product_type'])) {
+        return $input['product_type'] === 'direct' ? 1 : 0;
+    }
+
+    return !empty($input['is_direct_purchase']) ? 1 : 0;
 }
 
 function deleteProduct(int $id): void
@@ -141,7 +150,7 @@ function shoppingList(): array
         }
 
         $recipe = recipeItemsByProduct((int)$product['id']);
-        if ((int)$product['is_direct_purchase'] === 1 || count($recipe) === 0) {
+        if ((int)$product['is_direct_purchase'] === 1) {
             $unitPrice = (float)$product['direct_purchase_price'];
             $productPurchases[] = [
                 'name' => $product['name'],

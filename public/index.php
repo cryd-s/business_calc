@@ -251,15 +251,20 @@ $message = flash();
     <form method="post" class="grid">
         <input type="hidden" name="action" value="product.create">
         <div><label>Name<input required name="name"></label></div>
-        <div><label>Direktgericht <input type="checkbox" name="is_direct_purchase" value="1"></label></div>
-        <div><label>Direkt-Einkaufspreis pro Stück<input step="0.01" type="number" name="direct_purchase_price" value="0"></label></div>
+        <div><label>Typ
+            <select name="product_type">
+                <option value="recipe">Kombination mehrerer Zutaten</option>
+                <option value="direct">Direktes Gericht</option>
+            </select>
+        </label></div>
+        <div><label>Preis pro Stück (nur bei direktem Gericht)<input step="0.01" type="number" name="direct_purchase_price" value="0"></label></div>
         <div><label>Zielbestand<input type="number" name="target_qty" value="0"></label></div>
         <div><label>Ist-Bestand<input type="number" name="stock_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Name</th><th>Direktgericht</th><th>Ziel</th><th>Ist</th><th>Preis pro Stück</th><th>Rezept</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Name</th><th>Typ</th><th>Ziel</th><th>Ist</th><th>Preis pro Stück</th><th>Rezept</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($products as $product): ?>
             <tr>
@@ -267,10 +272,15 @@ $message = flash();
                     <input type="hidden" name="action" value="product.update">
                     <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
                     <td><input name="name" value="<?= htmlspecialchars($product['name']) ?>"></td>
-                    <td><input type="checkbox" name="is_direct_purchase" value="1" <?= (int)$product['is_direct_purchase'] === 1 ? 'checked' : '' ?>></td>
+                    <td>
+                        <select name="product_type">
+                            <option value="recipe" <?= (int)$product['is_direct_purchase'] === 0 ? 'selected' : '' ?>>Kombi-Zutaten</option>
+                            <option value="direct" <?= (int)$product['is_direct_purchase'] === 1 ? 'selected' : '' ?>>Direktes Gericht</option>
+                        </select>
+                    </td>
                     <td><input type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
                     <td><input type="number" name="stock_qty" value="<?= (int)$product['stock_qty'] ?>"></td>
-                    <td><input type="number" step="0.01" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>" placeholder="optional"></td>
+                    <td><input type="number" step="0.01" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>" placeholder="nur direkt"></td>
                     <td>
                         <a href="?view=recipe&product_id=<?= (int)$product['id'] ?>">Bearbeiten (<?= (int)$product['ingredient_count'] ?>)</a><br>
                         kalkuliert: <?= number_format((float)$product['calculated_recipe_price'], 2, ',', '.') ?> €
@@ -293,7 +303,7 @@ $message = flash();
 <?php elseif ($view === 'recipe' && $productForRecipe): ?>
 <section>
     <h2>Rezept für <?= htmlspecialchars($productForRecipe['name']) ?></h2>
-    <p>Hier legst du fest, wie viele Stück einer Zutat für ein Gericht benötigt werden.</p>
+    <p>Hier legst du fest, wie viele Stück einer Zutat für ein Gericht benötigt werden (Typ: Kombination mehrerer Zutaten).</p>
     <form method="post" class="grid" style="grid-template-columns: 3fr 2fr 1fr;">
         <input type="hidden" name="action" value="recipe.upsert">
         <input type="hidden" name="product_id" value="<?= (int)$productForRecipe['id'] ?>">
