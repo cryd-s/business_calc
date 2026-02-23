@@ -424,6 +424,78 @@ function shoppingList(): array
     ];
 }
 
+function completeShoppingListAndUpdateInventory(): void
+{
+    $products = allProducts();
+    $ingredients = allIngredients();
+
+    $ingredientMissingQty = [];
+    foreach ($ingredients as $ingredient) {
+        $ingredientMissingQty[(int)$ingredient['id']] = 0.0;
+    }
+
+    $directProductMissingQty = [];
+
+    foreach ($products as $product) {
+        $productId = (int)$product['id'];
+        $missingProductQty = max(0, (int)$product['target_qty'] - (int)$product['stock_qty']);
+        if ($missingProductQty <= 0) {
+            continue;
+        }
+
+        if ((int)$product['is_direct_purchase'] === 1) {
+            $directProductMissingQty[$productId] = $missingProductQty;
+            continue;
+        }
+
+        $recipe = recipeItemsByProduct($productId);
+        foreach ($recipe as $item) {
+            $ingredientId = (int)$item['ingredient_id'];
+            $ingredientMissingQty[$ingredientId] += (float)$item['qty_per_product'] * $missingProductQty;
+        }
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        foreach ($directProductMissingQty as $productId => $missingQty) {
+            $stmt = $pdo->prepare('UPDATE products SET stock_qty = stock_qty + :qty WHERE id = :id');
+            $stmt->execute([
+                ':id' => (int)$productId,
+                ':qty' => (int)$missingQty,
+            ]);
+        }
+
+        foreach ($ingredients as $ingredient) {
+            $ingredientId = (int)$ingredient['id'];
+            $neededQty = $ingredientMissingQty[$ingredientId] ?? 0;
+            if ($neededQty <= 0) {
+                continue;
+            }
+
+            $currentStock = (float)$ingredient['stock_qty'];
+            $missingQty = max(0, $neededQty - $currentStock);
+            if ($missingQty <= 0) {
+                continue;
+            }
+
+            $stmt = $pdo->prepare('UPDATE ingredients SET stock_qty = stock_qty + :qty WHERE id = :id');
+            $stmt->execute([
+                ':id' => $ingredientId,
+                ':qty' => $missingQty,
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        throw $e;
+    }
+}
+
 function companyName(): string
 {
     $stmt = db()->prepare('SELECT setting_value FROM app_settings WHERE setting_key = :key LIMIT 1');
