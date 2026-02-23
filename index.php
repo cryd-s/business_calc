@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../src/repository.php';
+require_once __DIR__ . '/src/repository.php';
 
 initSchema();
 
