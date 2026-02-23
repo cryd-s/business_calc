@@ -76,30 +76,139 @@ $message = flash();
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Business Einkaufsliste</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 24px; background: #f7f8fa; color: #202533; }
-        nav a { margin-right: 14px; text-decoration: none; color: #1557ff; font-weight: bold; }
-        section { background: #fff; border-radius: 10px; padding: 16px; margin-top: 16px; box-shadow: 0 3px 12px rgba(0,0,0,0.06); }
+        :root {
+            --bg: #04070f;
+            --panel: rgba(10, 16, 33, 0.88);
+            --panel-border: rgba(109, 130, 185, 0.35);
+            --text: #e8eefb;
+            --muted: #8f9fc5;
+            --accent: #1ed9d2;
+            --accent-2: #3c69ff;
+            --danger: #ec5750;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: Inter, Segoe UI, Arial, sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 10% 0%, rgba(30, 217, 210, 0.2), transparent 35%),
+                radial-gradient(circle at 70% -10%, rgba(60, 105, 255, 0.18), transparent 30%),
+                var(--bg);
+        }
+        h1 { margin: 0; font-size: 1.6rem; }
+        h2, h3 { color: #f2f6ff; margin-top: 0; }
+        p, li, label { color: var(--muted); }
+        .app-shell { max-width: 1500px; margin: 0 auto; }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 14px 18px;
+            border-radius: 16px;
+            background: linear-gradient(120deg, rgba(11, 22, 46, 0.95), rgba(5, 10, 22, 0.95));
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 0 0 1px rgba(9, 25, 53, 0.45), 0 16px 30px rgba(0, 0, 0, 0.45);
+        }
+        .pill-nav {
+            margin-top: 16px;
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 999px;
+            background: rgba(8, 14, 29, 0.8);
+            border: 1px solid var(--panel-border);
+        }
+        nav a {
+            text-decoration: none;
+            color: var(--text);
+            padding: 10px 14px;
+            border-radius: 999px;
+            transition: 0.2s ease;
+        }
+        nav a:hover,
+        nav a.active {
+            color: #041015;
+            background: linear-gradient(135deg, var(--accent), #53e9b0);
+            box-shadow: 0 0 15px rgba(30, 217, 210, 0.45);
+        }
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 18px;
+            margin-top: 18px;
+        }
+        section {
+            background: linear-gradient(140deg, rgba(7, 12, 25, 0.94), rgba(5, 8, 19, 0.94));
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+            margin-bottom: 16px;
+        }
         table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th, td { padding: 8px; border-bottom: 1px solid #e4e8f0; text-align: left; }
-        input, select { padding: 6px; width: 100%; box-sizing: border-box; }
-        .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; align-items: end; }
-        button { padding: 8px 10px; border: none; border-radius: 7px; background: #1557ff; color: #fff; cursor: pointer; }
-        .danger { background: #c53b37; }
-        .flash { padding: 10px; border-radius: 8px; background: #eef4ff; margin-top: 12px; }
+        th, td {
+            padding: 10px 8px;
+            border-bottom: 1px solid rgba(151, 169, 214, 0.22);
+            text-align: left;
+            color: #d6def2;
+        }
+        input, select {
+            padding: 10px;
+            width: 100%;
+            background: rgba(10, 16, 33, 0.95);
+            color: var(--text);
+            border: 1px solid rgba(131, 149, 193, 0.35);
+            border-radius: 10px;
+        }
+        .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: end; }
+        button {
+            padding: 10px 14px;
+            border: 1px solid rgba(78, 209, 226, 0.5);
+            border-radius: 999px;
+            background: linear-gradient(135deg, #0f223f, #0e1730);
+            color: var(--text);
+            cursor: pointer;
+        }
+        button:hover { border-color: var(--accent); box-shadow: 0 0 15px rgba(30, 217, 210, 0.3); }
+        .danger { border-color: rgba(236, 87, 80, 0.7); color: #ffd6d4; }
+        .flash {
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(30, 217, 210, 0.4);
+            background: rgba(17, 35, 49, 0.8);
+            margin-top: 14px;
+        }
+        a { color: #87e5ff; }
+        @media (max-width: 1100px) {
+            .content-grid { grid-template-columns: 1fr; }
+            .grid { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body>
-<h1>Business Verwaltung & Einkaufsliste</h1>
-<nav>
-    <a href="?view=dashboard">Dashboard</a>
-    <a href="?view=ingredients">Zutaten</a>
-    <a href="?view=products">Gerichte/Getränke</a>
-    <a href="?view=shopping">Einkaufsliste</a>
-</nav>
+<div class="app-shell">
+    <header class="top-bar">
+        <h1>Business Verwaltung & Einkaufsliste</h1>
+        <small>Modernes Dark UI</small>
+    </header>
+
+    <nav class="pill-nav">
+        <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
+        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte/Getränke</a>
+        <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
+    </nav>
 
 <?php if ($message): ?>
     <p class="flash"><?= htmlspecialchars($message) ?></p>
 <?php endif; ?>
+
+<div class="content-grid">
+    <div>
 
 <?php if ($view === 'ingredients'): ?>
 <section>
@@ -244,6 +353,17 @@ $message = flash();
     </ul>
 </section>
 <?php endif; ?>
+    </div>
+
+    <div>
+        <section>
+            <h2>Live Überblick</h2>
+            <ul>
+                <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
+                <li>Anzahl Gerichte/Getränke: <?= count($products) ?></li>
+                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</li>
+            </ul>
+        </section>
 
 <?php if ($view === 'shopping' || $view === 'dashboard'): ?>
 <section>
@@ -287,5 +407,8 @@ $message = flash();
     <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</strong></p>
 </section>
 <?php endif; ?>
+    </div>
+</div>
+</div>
 </body>
 </html>
