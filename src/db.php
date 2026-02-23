@@ -52,7 +52,8 @@ function db(): PDO
 
 function initSchema(): void
 {
-    $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $pdo = db();
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
     if ($driver === 'sqlite') {
         $sql = <<<'SQL'
@@ -114,7 +115,51 @@ CREATE TABLE IF NOT EXISTS recipe_items (
 SQL;
     }
 
-    db()->exec($sql);
+    $pdo->exec($sql);
+
+    ensureProductSchema($pdo, $driver);
+}
+
+function ensureProductSchema(PDO $pdo, string $driver): void
+{
+    $columns = tableColumns($pdo, 'products', $driver);
+
+    if (!isset($columns['direct_purchase_price'])) {
+        $pdo->exec('ALTER TABLE products ADD COLUMN direct_purchase_price DECIMAL(10,2) NOT NULL DEFAULT 0');
+    }
+    if (!isset($columns['is_direct_purchase'])) {
+        $type = $driver === 'sqlite' ? 'INTEGER' : 'TINYINT(1)';
+        $pdo->exec("ALTER TABLE products ADD COLUMN is_direct_purchase {$type} NOT NULL DEFAULT 0");
+    }
+    if (!isset($columns['target_qty'])) {
+        $pdo->exec('ALTER TABLE products ADD COLUMN target_qty INT NOT NULL DEFAULT 0');
+    }
+    if (!isset($columns['stock_qty'])) {
+        $pdo->exec('ALTER TABLE products ADD COLUMN stock_qty INT NOT NULL DEFAULT 0');
+    }
+}
+
+function tableColumns(PDO $pdo, string $table, string $driver): array
+{
+    if ($driver === 'sqlite') {
+        $stmt = $pdo->query(sprintf('PRAGMA table_info(%s)', $table));
+        $rows = $stmt->fetchAll();
+        $columns = [];
+        foreach ($rows as $row) {
+            $columns[(string)$row['name']] = true;
+        }
+        return $columns;
+    }
+
+    $stmt = $pdo->prepare(sprintf('SHOW COLUMNS FROM %s', $table));
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+    $columns = [];
+    foreach ($rows as $row) {
+        $columns[(string)$row['Field']] = true;
+    }
+
+    return $columns;
 }
 
 function flash(?string $message = null): ?string

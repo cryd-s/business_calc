@@ -120,6 +120,38 @@ function upsertRecipeItem(int $productId, int $ingredientId, float $qty): void
     $stmt->execute([':p' => $productId, ':i' => $ingredientId, ':q' => $qty]);
 }
 
+function assignRecipeItems(int $productId, array $ingredientQtyMap): void
+{
+    $validRows = [];
+    foreach ($ingredientQtyMap as $ingredientId => $qty) {
+        $ingredientId = (int)$ingredientId;
+        $qty = (float)$qty;
+        if ($ingredientId <= 0 || $qty <= 0) {
+            continue;
+        }
+
+        $validRows[$ingredientId] = $qty;
+    }
+
+    if ($validRows === []) {
+        return;
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        foreach ($validRows as $ingredientId => $qty) {
+            upsertRecipeItem($productId, $ingredientId, $qty);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
 function deleteRecipeItem(int $id): void
 {
     $stmt = db()->prepare('DELETE FROM recipe_items WHERE id = :id');
