@@ -480,7 +480,8 @@ $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['
 $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
 $discordLoginUrl = discordAuthUrl();
 $message = flash();
-$isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['employees', 'ingredients', 'products', 'recipe', 'options'], true);
+$isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['employees', 'recipe', 'options'], true);
+$singleColumnViews = ['login', 'employees', 'recipe', 'options'];
 
 
 ?>
@@ -657,7 +658,7 @@ $isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['emp
     <p class="flash"><?= htmlspecialchars($message) ?></p>
 <?php endif; ?>
 
-<div class="content-grid <?= in_array($view, ['shopping', 'login'], true) || $isAdminWorkspaceView ? 'shopping-view' : '' ?>">
+<div class="content-grid <?= in_array($view, $singleColumnViews, true) ? 'shopping-view' : '' ?>">
     <div>
 
 <?php if ($view === 'login'): ?>
@@ -744,7 +745,6 @@ $isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['emp
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
     </nav>
     <h2>Zutaten</h2>
-    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <form method="post" class="grid">
         <input type="hidden" name="action" value="ingredient.create">
         <div><label>Name<input required name="name"></label></div>
@@ -790,7 +790,6 @@ $isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['emp
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
     </nav>
     <h2>Direktvermarktung</h2>
-    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <p>Direktes Gericht: Preis wird manuell gepflegt.</p>
     <form method="post" class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
         <input type="hidden" name="action" value="product.create">
@@ -950,7 +949,6 @@ $isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['emp
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
     </nav>
     <h2>Optionen</h2>
-    <p><a href="?view=dashboard">← Zurück zur normalen Ansicht</a></p>
     <form method="post" class="grid" style="grid-template-columns: 3fr 1fr;">
         <input type="hidden" name="action" value="options.company.update">
         <div><label>Unternehmensname<input name="company_name" value="<?= htmlspecialchars($companyName) ?>" placeholder="z. B. Muster GmbH"></label></div>
