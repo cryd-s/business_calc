@@ -19,6 +19,12 @@ try {
         header('Location: ?view=ingredients');
         exit;
     }
+    if ($action === 'ingredient.stock.update') {
+        updateIngredientStock((int)$_POST['id'], (float)($_POST['stock_qty'] ?? 0));
+        flash('Lagerbestand der Zutat aktualisiert.');
+        header('Location: ?view=inventory');
+        exit;
+    }
     if ($action === 'ingredient.delete') {
         deleteIngredient((int)$_POST['id']);
         flash('Zutat gelöscht.');
@@ -36,6 +42,12 @@ try {
         updateProduct((int)$_POST['id'], $_POST);
         flash('Gericht aktualisiert.');
         header('Location: ?view=products');
+        exit;
+    }
+    if ($action === 'product.stock.update') {
+        updateProductStock((int)$_POST['id'], (int)($_POST['stock_qty'] ?? 0));
+        flash('Lagerbestand des Gerichts aktualisiert.');
+        header('Location: ?view=inventory');
         exit;
     }
     if ($action === 'product.delete') {
@@ -70,6 +82,8 @@ try {
 
 $ingredients = allIngredients();
 $products = allProducts();
+$inventoryIngredients = allIngredientsByStockOrder();
+$inventoryProducts = allProductsByStockOrder();
 $shoppingList = shoppingList();
 $productForRecipe = isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
@@ -206,6 +220,7 @@ $message = flash();
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
+        <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
     </nav>
 
@@ -223,11 +238,12 @@ $message = flash();
         <input type="hidden" name="action" value="ingredient.create">
         <div><label>Name<input required name="name"></label></div>
         <div><label>Preis pro Stück<input required step="0.01" type="number" name="price_per_unit"></label></div>
+        <div><label>Lagerbestand<input step="0.01" type="number" name="stock_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Name</th><th>Preis pro Stück</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Name</th><th>Preis pro Stück</th><th>Lagerbestand</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($ingredients as $ingredient): ?>
             <tr>
@@ -236,6 +252,7 @@ $message = flash();
                     <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
                     <td><input name="name" value="<?= htmlspecialchars($ingredient['name']) ?>"></td>
                     <td><input type="number" step="0.01" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
+                    <td><input type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
                     <td>
                         <button>Speichern</button>
                 </form>
@@ -338,6 +355,56 @@ $message = flash();
             </tbody>
         </table>
     </form>
+</section>
+
+<?php elseif ($view === 'inventory'): ?>
+<section>
+    <h2>Lager</h2>
+    <p>Hier siehst du alle Gerichte und Zutaten. Du kannst die Reihenfolge per Drag &amp; Drop sortieren und nur die aktuelle Lagermenge pflegen.</p>
+
+    <h3>Gerichte</h3>
+    <table>
+        <thead><tr><th>Name</th><th>Aktueller Lagerbestand</th><th>Aktion</th></tr></thead>
+        <tbody id="inventory-products" class="inventory-list">
+        <?php foreach ($inventoryProducts as $product): ?>
+            <tr draggable="true" data-item-type="product" data-item-id="<?= (int)$product['id'] ?>">
+                <td><?= htmlspecialchars($product['name']) ?></td>
+                <td>
+                    <form method="post" style="display:flex; gap:8px; align-items:center;">
+                        <input type="hidden" name="action" value="product.stock.update">
+                        <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
+                        <input type="number" name="stock_qty" value="<?= (int)$product['stock_qty'] ?>">
+                </td>
+                <td>
+                        <button>Speichern</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <h3>Zutaten</h3>
+    <table>
+        <thead><tr><th>Name</th><th>Aktueller Lagerbestand</th><th>Aktion</th></tr></thead>
+        <tbody id="inventory-ingredients" class="inventory-list">
+        <?php foreach ($inventoryIngredients as $ingredient): ?>
+            <tr draggable="true" data-item-type="ingredient" data-item-id="<?= (int)$ingredient['id'] ?>">
+                <td><?= htmlspecialchars($ingredient['name']) ?></td>
+                <td>
+                    <form method="post" style="display:flex; gap:8px; align-items:center;">
+                        <input type="hidden" name="action" value="ingredient.stock.update">
+                        <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
+                        <input type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>">
+                </td>
+                <td>
+                        <button>Speichern</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
 </section>
 
 <?php elseif ($view === 'recipe' && $productForRecipe): ?>
@@ -448,5 +515,47 @@ $message = flash();
     </div>
 </div>
 </div>
+<script>
+    (function () {
+        const containers = document.querySelectorAll('.inventory-list');
+        let draggedRow = null;
+
+        containers.forEach((container) => {
+            container.addEventListener('dragstart', (event) => {
+                const row = event.target.closest('tr');
+                if (!row) {
+                    return;
+                }
+                draggedRow = row;
+                row.style.opacity = '0.5';
+            });
+
+            container.addEventListener('dragend', () => {
+                if (draggedRow) {
+                    draggedRow.style.opacity = '1';
+                }
+                draggedRow = null;
+            });
+
+            container.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                const targetRow = event.target.closest('tr');
+                if (!draggedRow || !targetRow || targetRow === draggedRow) {
+                    return;
+                }
+
+                const rows = Array.from(container.querySelectorAll('tr'));
+                const draggedIndex = rows.indexOf(draggedRow);
+                const targetIndex = rows.indexOf(targetRow);
+
+                if (draggedIndex < targetIndex) {
+                    targetRow.after(draggedRow);
+                } else {
+                    targetRow.before(draggedRow);
+                }
+            });
+        });
+    })();
+</script>
 </body>
 </html>

@@ -4,26 +4,43 @@ require_once __DIR__ . '/db.php';
 
 function allIngredients(): array
 {
-    $stmt = db()->query('SELECT id, name, price_per_unit, created_at FROM ingredients ORDER BY name');
+    $stmt = db()->query('SELECT id, name, price_per_unit, stock_qty, created_at FROM ingredients ORDER BY name');
+    return $stmt->fetchAll();
+}
+
+function allIngredientsByStockOrder(): array
+{
+    $stmt = db()->query('SELECT id, name, price_per_unit, stock_qty, created_at FROM ingredients ORDER BY stock_qty DESC, name');
     return $stmt->fetchAll();
 }
 
 function createIngredient(array $input): void
 {
-    $stmt = db()->prepare('INSERT INTO ingredients (name, price_per_unit) VALUES (:name, :price)');
+    $stmt = db()->prepare('INSERT INTO ingredients (name, price_per_unit, stock_qty) VALUES (:name, :price, :stock_qty)');
     $stmt->execute([
         ':name' => trim($input['name']),
         ':price' => (float)$input['price_per_unit'],
+        ':stock_qty' => (float)($input['stock_qty'] ?? 0),
     ]);
 }
 
 function updateIngredient(int $id, array $input): void
 {
-    $stmt = db()->prepare('UPDATE ingredients SET name = :name, price_per_unit = :price WHERE id = :id');
+    $stmt = db()->prepare('UPDATE ingredients SET name = :name, price_per_unit = :price, stock_qty = :stock_qty WHERE id = :id');
     $stmt->execute([
         ':id' => $id,
         ':name' => trim($input['name']),
         ':price' => (float)$input['price_per_unit'],
+        ':stock_qty' => (float)($input['stock_qty'] ?? 0),
+    ]);
+}
+
+function updateIngredientStock(int $id, float $stockQty): void
+{
+    $stmt = db()->prepare('UPDATE ingredients SET stock_qty = :stock_qty WHERE id = :id');
+    $stmt->execute([
+        ':id' => $id,
+        ':stock_qty' => $stockQty,
     ]);
 }
 
@@ -46,6 +63,30 @@ GROUP BY p.id
 ORDER BY p.name
 SQL;
     return db()->query($sql)->fetchAll();
+}
+
+function allProductsByStockOrder(): array
+{
+    $sql = <<<'SQL'
+SELECT p.*,
+       COUNT(ri.id) AS ingredient_count,
+       COALESCE(SUM(ri.qty_per_product * i.price_per_unit), 0) AS calculated_recipe_price
+FROM products p
+LEFT JOIN recipe_items ri ON ri.product_id = p.id
+LEFT JOIN ingredients i ON i.id = ri.ingredient_id
+GROUP BY p.id
+ORDER BY p.stock_qty DESC, p.name
+SQL;
+    return db()->query($sql)->fetchAll();
+}
+
+function updateProductStock(int $id, int $stockQty): void
+{
+    $stmt = db()->prepare('UPDATE products SET stock_qty = :stock_qty WHERE id = :id');
+    $stmt->execute([
+        ':id' => $id,
+        ':stock_qty' => $stockQty,
+    ]);
 }
 
 function createProduct(array $input): void

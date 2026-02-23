@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS ingredients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(120) NOT NULL UNIQUE,
     price_per_unit DECIMAL(10,2) NOT NULL,
+    stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS ingredients (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
     price_per_unit DECIMAL(10,2) NOT NULL,
+    stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -118,6 +120,16 @@ SQL;
     $pdo->exec($sql);
 
     ensureProductSchema($pdo, $driver);
+    ensureIngredientSchema($pdo, $driver);
+}
+
+function ensureIngredientSchema(PDO $pdo, string $driver): void
+{
+    $columns = tableColumns($pdo, 'ingredients', $driver);
+
+    if (!isset($columns['stock_qty'])) {
+        $pdo->exec('ALTER TABLE ingredients ADD COLUMN stock_qty DECIMAL(10,2) NOT NULL DEFAULT 0');
+    }
 }
 
 function ensureProductSchema(PDO $pdo, string $driver): void
