@@ -2,6 +2,90 @@
 
 require_once __DIR__ . '/db.php';
 
+
+function discordAdminId(): string
+{
+    return '460750108615770134';
+}
+
+function findUserByDiscordId(string $discordId): ?array
+{
+    $stmt = db()->prepare('SELECT id, discord_id, display_name, is_approved, created_at, updated_at FROM user_access WHERE discord_id = :discord_id LIMIT 1');
+    $stmt->execute([':discord_id' => trim($discordId)]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
+}
+
+function createOrUpdateUserAccess(string $discordId, string $displayName): array
+{
+    $discordId = trim($discordId);
+    if ($discordId === '') {
+        throw new InvalidArgumentException('Discord ID darf nicht leer sein.');
+    }
+
+    $displayName = trim($displayName);
+    $isAdmin = $discordId === discordAdminId() ? 1 : 0;
+
+    $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+    if ($driver === 'sqlite') {
+        $sql = <<<'SQL'
+INSERT INTO user_access (discord_id, display_name, is_approved)
+VALUES (:discord_id, :display_name, :is_approved)
+ON CONFLICT(discord_id) DO UPDATE SET
+    display_name = excluded.display_name,
+    is_approved = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_approved END,
+    updated_at = CURRENT_TIMESTAMP
+SQL;
+    } else {
+        $sql = <<<'SQL'
+INSERT INTO user_access (discord_id, display_name, is_approved)
+VALUES (:discord_id, :display_name, :is_approved)
+ON DUPLICATE KEY UPDATE
+    display_name = VALUES(display_name),
+    is_approved = IF(discord_id = :admin_id, 1, is_approved)
+SQL;
+    }
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute([
+        ':discord_id' => $discordId,
+        ':display_name' => $displayName,
+        ':is_approved' => $isAdmin,
+        ':admin_id' => discordAdminId(),
+    ]);
+
+    $user = findUserByDiscordId($discordId);
+    if ($user === null) {
+        throw new RuntimeException('Benutzer konnte nicht geladen werden.');
+    }
+
+    return $user;
+}
+
+function allUserAccessEntries(): array
+{
+    $stmt = db()->query('SELECT id, discord_id, display_name, is_approved, created_at, updated_at FROM user_access ORDER BY is_approved DESC, created_at ASC');
+    return $stmt->fetchAll();
+}
+
+function setUserApproval(string $discordId, bool $isApproved): void
+{
+    if (trim($discordId) === '') {
+        throw new InvalidArgumentException('Discord ID fehlt.');
+    }
+
+    if (trim($discordId) === discordAdminId()) {
+        return;
+    }
+
+    $stmt = db()->prepare('UPDATE user_access SET is_approved = :approved WHERE discord_id = :discord_id');
+    $stmt->execute([
+        ':approved' => $isApproved ? 1 : 0,
+        ':discord_id' => trim($discordId),
+    ]);
+}
+
 function allIngredients(): array
 {
     $stmt = db()->query('SELECT id, name, price_per_unit, stock_qty, created_at FROM ingredients ORDER BY name');

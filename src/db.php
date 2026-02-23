@@ -132,6 +132,7 @@ SQL;
     ensureProductSchema($pdo, $driver);
     ensureIngredientSchema($pdo, $driver);
     ensureAppSettingsSchema($pdo, $driver);
+    ensureUserAccessSchema($pdo, $driver);
 }
 
 function ensureIngredientSchema(PDO $pdo, string $driver): void
@@ -180,6 +181,34 @@ SQL);
 CREATE TABLE IF NOT EXISTS app_settings (
     setting_key VARCHAR(120) PRIMARY KEY,
     setting_value TEXT NOT NULL
+);
+SQL);
+}
+
+function ensureUserAccessSchema(PDO $pdo, string $driver): void
+{
+    if ($driver === 'sqlite') {
+        $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS user_access (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    discord_id VARCHAR(32) NOT NULL UNIQUE,
+    display_name VARCHAR(120) NOT NULL DEFAULT '',
+    is_approved INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+SQL);
+        return;
+    }
+
+    $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS user_access (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    discord_id VARCHAR(32) NOT NULL UNIQUE,
+    display_name VARCHAR(120) NOT NULL DEFAULT '',
+    is_approved TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 SQL);
 }
