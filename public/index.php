@@ -76,6 +76,12 @@ try {
         header('Location: ?view=recipe&product_id=' . $productId);
         exit;
     }
+    if ($action === 'options.company.update') {
+        updateCompanyName((string)($_POST['company_name'] ?? ''));
+        flash('Unternehmensname gespeichert.');
+        header('Location: ?view=options');
+        exit;
+    }
 } catch (Throwable $e) {
     flash('Fehler: ' . $e->getMessage());
 }
@@ -107,6 +113,7 @@ usort($inventoryItems, static function (array $a, array $b): int {
     return strcasecmp($a['name'], $b['name']);
 });
 $shoppingList = shoppingList();
+$companyName = companyName();
 $productForRecipe = isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
 $message = flash();
@@ -153,6 +160,13 @@ $message = flash();
             background: linear-gradient(120deg, rgba(11, 22, 46, 0.95), rgba(5, 10, 22, 0.95));
             border: 1px solid var(--panel-border);
             box-shadow: 0 0 0 1px rgba(9, 25, 53, 0.45), 0 16px 30px rgba(0, 0, 0, 0.45);
+        }
+        .top-bar.dashboard-view {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            padding-left: 0;
+            padding-right: 0;
         }
         .pill-nav {
             margin-top: 16px;
@@ -244,9 +258,8 @@ $message = flash();
 </head>
 <body>
 <div class="app-shell">
-    <header class="top-bar">
-        <h1>Business Verwaltung & Einkaufsliste</h1>
-        <small>Modernes Dark UI</small>
+    <header class="top-bar <?= $view === 'dashboard' ? 'dashboard-view' : '' ?>">
+        <h1><?= htmlspecialchars(trim(($companyName !== '' ? $companyName . ' ' : '') . 'Business Verwaltung & Einkaufsliste')) ?></h1>
     </header>
 
     <nav class="pill-nav">
@@ -255,6 +268,7 @@ $message = flash();
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
+        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
     </nav>
 
 <?php if ($message): ?>
@@ -377,7 +391,7 @@ $message = flash();
                     </form>
                 </td>
                 <td><input form="<?= $formId ?>" type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
-                <td><?= number_format((float)$product['calculated_recipe_price'], 2, ',', '.') ?> €</td>
+                <td><?= number_format((float)$product['calculated_recipe_price'], 2, ',', '.') ?> $</td>
                 <td><a href="?view=recipe&product_id=<?= (int)$product['id'] ?>">Bearbeiten (<?= (int)$product['ingredient_count'] ?>)</a></td>
                 <td>
                     <form method="post" style="display:inline">
@@ -442,7 +456,7 @@ $message = flash();
             <tr>
                 <td><?= htmlspecialchars($item['ingredient_name']) ?></td>
                 <td><?= number_format((float)$item['qty_per_product'], 2, ',', '.') ?></td>
-                <td><?= number_format((float)$item['qty_per_product'] * (float)$item['price_per_unit'], 2, ',', '.') ?> €</td>
+                <td><?= number_format((float)$item['qty_per_product'] * (float)$item['price_per_unit'], 2, ',', '.') ?> $</td>
                 <td>
                     <form method="post">
                         <input type="hidden" name="action" value="recipe.delete">
@@ -457,6 +471,16 @@ $message = flash();
     </table>
 </section>
 
+<?php elseif ($view === 'options'): ?>
+<section>
+    <h2>Optionen</h2>
+    <form method="post" class="grid" style="grid-template-columns: 3fr 1fr;">
+        <input type="hidden" name="action" value="options.company.update">
+        <div><label>Unternehmensname<input name="company_name" value="<?= htmlspecialchars($companyName) ?>" placeholder="z. B. Muster GmbH"></label></div>
+        <div><button type="submit">Speichern</button></div>
+    </form>
+</section>
+<?php elseif ($view === 'shopping'): ?>
 <?php else: ?>
 <section>
     <h2>Dashboard</h2>
@@ -470,36 +494,36 @@ $message = flash();
     </div>
 
     <div>
+<?php if ($view !== 'shopping'): ?>
         <section>
             <h2>Live Überblick</h2>
             <ul>
                 <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
                 <li>Anzahl Gerichte: <?= count($products) ?></li>
-                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</li>
+                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</li>
             </ul>
         </section>
+<?php endif; ?>
 
 <?php if ($view === 'shopping'): ?>
 <section>
     <h2>Einkaufsliste (automatisch)</h2>
     <p>Alle benötigten Einkäufe in einer Liste. Die Reihenfolge kannst du per Drag &amp; Drop anpassen.</p>
     <table>
-        <thead><tr><th>Typ</th><th>Artikel</th><th>Menge</th><th>Einheit</th></tr></thead>
+        <thead><tr><th>Artikel</th><th>Menge</th></tr></thead>
         <tbody class="shopping-list" data-sortable-key="shopping-order-v1">
         <?php foreach ($shoppingList['items'] as $row): ?>
             <tr draggable="true" data-sort-value="<?= htmlspecialchars($row['type'] . ':' . $row['name']) ?>">
-                <td><?= htmlspecialchars($row['type']) ?></td>
                 <td><?= htmlspecialchars($row['name']) ?></td>
-                <td><?= number_format((float)$row['qty'], 2, ',', '.') ?></td>
-                <td><?= htmlspecialchars($row['unit']) ?></td>
+                <td><?= number_format((float)$row['qty'], 0, ',', '.') ?></td>
             </tr>
         <?php endforeach; ?>
         <?php if (count($shoppingList['items']) === 0): ?>
-            <tr><td colspan="4">Kein Einkaufsbedarf.</td></tr>
+            <tr><td colspan="2">Kein Einkaufsbedarf.</td></tr>
         <?php endif; ?>
         </tbody>
     </table>
-    <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> €</strong></p>
+    <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</strong></p>
 </section>
 <?php endif; ?>
     </div>
