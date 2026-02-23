@@ -215,7 +215,7 @@ function shoppingList(): array
         ];
     }
 
-    $productPurchases = [];
+    $shoppingItems = [];
 
     foreach ($products as $product) {
         $missingProductQty = max(0, (int)$product['target_qty'] - (int)$product['stock_qty']);
@@ -226,10 +226,11 @@ function shoppingList(): array
         $recipe = recipeItemsByProduct((int)$product['id']);
         if ((int)$product['is_direct_purchase'] === 1) {
             $unitPrice = (float)$product['direct_purchase_price'];
-            $productPurchases[] = [
+            $shoppingItems[] = [
+                'type' => 'Gericht',
                 'name' => $product['name'],
                 'qty' => $missingProductQty,
-                'unit_price' => $unitPrice,
+                'unit' => 'Stk',
                 'sum' => $unitPrice * $missingProductQty,
             ];
             continue;
@@ -241,25 +242,27 @@ function shoppingList(): array
         }
     }
 
-    $ingredientPurchases = [];
     foreach ($ingredientNeeds as $need) {
         $missing = max(0, $need['needed_qty'] - $need['stock_qty']);
         if ($missing > 0) {
-            $ingredientPurchases[] = [
+            $shoppingItems[] = [
+                'type' => 'Zutat',
                 'name' => $need['name'],
                 'qty' => $missing,
                 'unit' => 'Stk',
-                'unit_price' => $need['price_per_unit'],
                 'sum' => $missing * $need['price_per_unit'],
             ];
         }
     }
 
-    $total = array_sum(array_column($ingredientPurchases, 'sum')) + array_sum(array_column($productPurchases, 'sum'));
+    usort($shoppingItems, static function (array $a, array $b): int {
+        return strcasecmp($a['name'], $b['name']);
+    });
+
+    $total = array_sum(array_column($shoppingItems, 'sum'));
 
     return [
-        'ingredient_purchases' => $ingredientPurchases,
-        'product_purchases' => $productPurchases,
+        'items' => $shoppingItems,
         'total' => $total,
     ];
 }
