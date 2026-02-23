@@ -25,7 +25,7 @@ function isLoggedIn(): bool
 
 function isAdminUser(?array $user): bool
 {
-    return is_array($user) && (($user['discord_id'] ?? '') === discordAdminId());
+    return is_array($user) && (int)($user['is_admin'] ?? 0) === 1;
 }
 
 function requireAuth(): void
@@ -141,7 +141,7 @@ try {
         requireAdmin();
         setUserApproval((string)($_POST['discord_id'] ?? ''), true);
         flash('Mitarbeiter freigeschaltet.');
-        header('Location: ?view=admin');
+        header('Location: ?view=admin&admin_tab=employees');
         exit;
     }
 
@@ -149,7 +149,23 @@ try {
         requireAdmin();
         setUserApproval((string)($_POST['discord_id'] ?? ''), false);
         flash('Freigabe entfernt.');
-        header('Location: ?view=admin');
+        header('Location: ?view=admin&admin_tab=employees');
+        exit;
+    }
+
+    if ($action === 'admin.user.make_admin') {
+        requireAdmin();
+        setUserAdmin((string)($_POST['discord_id'] ?? ''), true);
+        flash('Admin-Berechtigung erteilt.');
+        header('Location: ?view=admin&admin_tab=employees');
+        exit;
+    }
+
+    if ($action === 'admin.user.remove_admin') {
+        requireAdmin();
+        setUserAdmin((string)($_POST['discord_id'] ?? ''), false);
+        flash('Admin-Berechtigung entfernt.');
+        header('Location: ?view=admin&admin_tab=employees');
         exit;
     }
 
@@ -226,9 +242,10 @@ try {
             exit;
         }
         if ($action === 'options.company.update') {
+            requireAdmin();
             updateCompanyName((string)($_POST['company_name'] ?? ''));
             flash('Unternehmensname gespeichert.');
-            header('Location: ?view=options');
+            header('Location: ?view=admin&admin_tab=options');
             exit;
         }
     }
@@ -291,6 +308,7 @@ try {
         $_SESSION['auth_user'] = [
             'discord_id' => $user['discord_id'],
             'display_name' => $user['display_name'],
+            'is_admin' => (int)$user['is_admin'],
             'is_approved' => (int)$user['is_approved'],
         ];
 
@@ -341,6 +359,13 @@ $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['
 $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
 $discordLoginUrl = discordAuthUrl();
 $message = flash();
+
+$adminTab = (string)($_GET['admin_tab'] ?? 'employees');
+$allowedAdminTabs = ['options', 'employees', 'products', 'ingredients'];
+if (!in_array($adminTab, $allowedAdminTabs, true)) {
+    $adminTab = 'employees';
+}
+
 ?>
 <!doctype html>
 <html lang="de">
@@ -490,6 +515,9 @@ $message = flash();
         <?php if ($loggedIn): ?>
             <div style="display:flex; align-items:center; gap:10px;">
                 <small>Angemeldet als <?= htmlspecialchars((string)($user['display_name'] ?? $user['discord_id'] ?? '')) ?></small>
+                <?php if (isAdminUser($user)): ?>
+                    <a href="?view=admin&admin_tab=employees"><button type="button">Admin-Menü</button></a>
+                <?php endif; ?>
                 <form method="post" style="margin:0;">
                     <input type="hidden" name="action" value="auth.logout">
                     <button type="submit">Logout</button>
@@ -505,10 +533,15 @@ $message = flash();
         <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
-        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
-        <?php if (isAdminUser($user)): ?>
-            <a class="<?= $view === 'admin' ? 'active' : '' ?>" href="?view=admin">Admin</a>
-        <?php endif; ?>
+    </nav>
+    <?php endif; ?>
+
+    <?php if ($loggedIn && isAdminUser($user)): ?>
+    <nav class="pill-nav" style="margin-top:10px;">
+        <a class="<?= $view === 'admin' && $adminTab === 'options' ? 'active' : '' ?>" href="?view=admin&admin_tab=options">Optionen</a>
+        <a class="<?= $view === 'admin' && $adminTab === 'employees' ? 'active' : '' ?>" href="?view=admin&admin_tab=employees">Mitarbeiter</a>
+        <a class="<?= $view === 'admin' && $adminTab === 'products' ? 'active' : '' ?>" href="?view=admin&admin_tab=products">Gerichte</a>
+        <a class="<?= $view === 'admin' && $adminTab === 'ingredients' ? 'active' : '' ?>" href="?view=admin&admin_tab=ingredients">Zutaten</a>
     </nav>
     <?php endif; ?>
 
@@ -530,24 +563,19 @@ $message = flash();
     <?php endif; ?>
 </section>
 
-<?php elseif ($view === 'admin' && isAdminUser($user)): ?>
+<?php elseif ($view === 'admin' && isAdminUser($user) && $adminTab === 'employees'): ?>
 <section>
-    <h2>Admin: Mitarbeiter freischalten</h2>
+    <h2>Admin: Mitarbeiter verwalten</h2>
     <p>Hier siehst du alle Nutzer, die sich via Discord angemeldet haben.</p>
     <table>
-        <thead><tr><th>Discord ID</th><th>Name</th><th>Status</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Discord ID</th><th>Name</th><th>Freigabe</th><th>Admin</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($adminUsers as $entry): ?>
             <tr>
                 <td><?= htmlspecialchars($entry['discord_id']) ?></td>
                 <td><?= htmlspecialchars($entry['display_name']) ?></td>
-                <td>
-                    <?php if ($entry['discord_id'] === discordAdminId()): ?>
-                        Admin (immer aktiv)
-                    <?php else: ?>
-                        <?= (int)$entry['is_approved'] === 1 ? 'Freigeschaltet' : 'Gesperrt' ?>
-                    <?php endif; ?>
-                </td>
+                <td><?= (int)$entry['is_approved'] === 1 ? 'Freigeschaltet' : 'Gesperrt' ?></td>
+                <td><?= (int)$entry['is_admin'] === 1 ? 'Ja' : 'Nein' ?></td>
                 <td>
                     <?php if ($entry['discord_id'] !== discordAdminId()): ?>
                         <?php if ((int)$entry['is_approved'] === 1): ?>
@@ -563,6 +591,19 @@ $message = flash();
                                 <button type="submit">Freischalten</button>
                             </form>
                         <?php endif; ?>
+                        <?php if ((int)$entry['is_admin'] === 1): ?>
+                            <form method="post" style="display:inline">
+                                <input type="hidden" name="action" value="admin.user.remove_admin">
+                                <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
+                                <button class="danger" type="submit">Admin entziehen</button>
+                            </form>
+                        <?php else: ?>
+                            <form method="post" style="display:inline">
+                                <input type="hidden" name="action" value="admin.user.make_admin">
+                                <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
+                                <button type="submit">Admin freischalten</button>
+                            </form>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -571,7 +612,7 @@ $message = flash();
     </table>
 </section>
 
-<?php elseif ($view === 'ingredients'): ?>
+<?php elseif ($view === 'ingredients' || ($view === 'admin' && isAdminUser($user) && $adminTab === 'ingredients')): ?>
 <section>
     <h2>Zutaten</h2>
     <form method="post" class="grid">
@@ -611,7 +652,7 @@ $message = flash();
     </table>
 </section>
 
-<?php elseif ($view === 'products'): ?>
+<?php elseif ($view === 'products' || ($view === 'admin' && isAdminUser($user) && $adminTab === 'products')): ?>
 <section>
     <h2>Direktvermarktung</h2>
     <p>Direktes Gericht: Preis wird manuell gepflegt.</p>
@@ -764,7 +805,7 @@ $message = flash();
     </table>
 </section>
 
-<?php elseif ($view === 'options'): ?>
+<?php elseif (($view === 'options' && isAdminUser($user)) || ($view === 'admin' && isAdminUser($user) && $adminTab === 'options')): ?>
 <section>
     <h2>Optionen</h2>
     <form method="post" class="grid" style="grid-template-columns: 3fr 1fr;">

@@ -10,7 +10,7 @@ function discordAdminId(): string
 
 function findUserByDiscordId(string $discordId): ?array
 {
-    $stmt = db()->prepare('SELECT id, discord_id, display_name, is_approved, created_at, updated_at FROM user_access WHERE discord_id = :discord_id LIMIT 1');
+    $stmt = db()->prepare('SELECT id, discord_id, display_name, is_admin, is_approved, created_at, updated_at FROM user_access WHERE discord_id = :discord_id LIMIT 1');
     $stmt->execute([':discord_id' => trim($discordId)]);
     $row = $stmt->fetch();
 
@@ -30,19 +30,21 @@ function createOrUpdateUserAccess(string $discordId, string $displayName): array
     $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
     if ($driver === 'sqlite') {
         $sql = <<<'SQL'
-INSERT INTO user_access (discord_id, display_name, is_approved)
-VALUES (:discord_id, :display_name, :is_approved)
+INSERT INTO user_access (discord_id, display_name, is_admin, is_approved)
+VALUES (:discord_id, :display_name, :is_admin, :is_approved)
 ON CONFLICT(discord_id) DO UPDATE SET
     display_name = excluded.display_name,
+    is_admin = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_admin END,
     is_approved = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_approved END,
     updated_at = CURRENT_TIMESTAMP
 SQL;
     } else {
         $sql = <<<'SQL'
-INSERT INTO user_access (discord_id, display_name, is_approved)
-VALUES (:discord_id, :display_name, :is_approved)
+INSERT INTO user_access (discord_id, display_name, is_admin, is_approved)
+VALUES (:discord_id, :display_name, :is_admin, :is_approved)
 ON DUPLICATE KEY UPDATE
     display_name = VALUES(display_name),
+    is_admin = IF(discord_id = :admin_id, 1, is_admin),
     is_approved = IF(discord_id = :admin_id, 1, is_approved)
 SQL;
     }
@@ -51,6 +53,7 @@ SQL;
     $stmt->execute([
         ':discord_id' => $discordId,
         ':display_name' => $displayName,
+        ':is_admin' => $isAdmin,
         ':is_approved' => $isAdmin,
         ':admin_id' => discordAdminId(),
     ]);
@@ -65,7 +68,7 @@ SQL;
 
 function allUserAccessEntries(): array
 {
-    $stmt = db()->query('SELECT id, discord_id, display_name, is_approved, created_at, updated_at FROM user_access ORDER BY is_approved DESC, created_at ASC');
+    $stmt = db()->query('SELECT id, discord_id, display_name, is_admin, is_approved, created_at, updated_at FROM user_access ORDER BY is_admin DESC, is_approved DESC, created_at ASC');
     return $stmt->fetchAll();
 }
 
@@ -82,6 +85,23 @@ function setUserApproval(string $discordId, bool $isApproved): void
     $stmt = db()->prepare('UPDATE user_access SET is_approved = :approved WHERE discord_id = :discord_id');
     $stmt->execute([
         ':approved' => $isApproved ? 1 : 0,
+        ':discord_id' => trim($discordId),
+    ]);
+}
+
+function setUserAdmin(string $discordId, bool $isAdmin): void
+{
+    if (trim($discordId) === '') {
+        throw new InvalidArgumentException('Discord ID fehlt.');
+    }
+
+    if (trim($discordId) === discordAdminId()) {
+        return;
+    }
+
+    $stmt = db()->prepare('UPDATE user_access SET is_admin = :is_admin WHERE discord_id = :discord_id');
+    $stmt->execute([
+        ':is_admin' => $isAdmin ? 1 : 0,
         ':discord_id' => trim($discordId),
     ]);
 }
