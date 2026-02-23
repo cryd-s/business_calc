@@ -279,22 +279,25 @@ $message = flash();
         <thead><tr><th>Name</th><th>Preis pro Stück</th><th>Lagerbestand</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($ingredients as $ingredient): ?>
+            <?php $formId = 'ingredient-' . (int)$ingredient['id']; ?>
             <tr>
-                <form method="post">
+                <td>
+                    <form method="post" class="autosave-form" id="<?= $formId ?>">
                     <input type="hidden" name="action" value="ingredient.update">
                     <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
-                    <td><input name="name" value="<?= htmlspecialchars($ingredient['name']) ?>"></td>
-                    <td><input type="number" step="0.01" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
-                    <td><input type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
-                    <td>
-                        <button>Speichern</button>
-                </form>
-                <form method="post" style="display:inline">
-                    <input type="hidden" name="action" value="ingredient.delete">
-                    <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
-                    <button class="danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
-                </form>
-                    </td>
+                        <input form="<?= $formId ?>" name="name" value="<?= htmlspecialchars($ingredient['name']) ?>">
+                        <small class="autosave-note" aria-live="polite"></small>
+                    </form>
+                </td>
+                <td><input form="<?= $formId ?>" type="number" step="0.01" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
+                <td><input form="<?= $formId ?>" type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
+                <td>
+                    <form method="post" style="display:inline">
+                        <input type="hidden" name="action" value="ingredient.delete">
+                        <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
+                        <button class="danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
