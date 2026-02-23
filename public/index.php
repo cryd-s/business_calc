@@ -536,9 +536,74 @@ $message = flash();
         });
 
         const containers = document.querySelectorAll('.inventory-list');
+        const inventoryStorageKey = 'inventory-order-v1';
         let draggedRow = null;
 
+        const rowKey = (row) => {
+            const type = row?.dataset?.itemType;
+            const id = row?.dataset?.itemId;
+            if (!type || !id) {
+                return null;
+            }
+            return `${type}:${id}`;
+        };
+
+        const saveInventoryOrder = (container) => {
+            const keys = Array.from(container.querySelectorAll('tr'))
+                .map(rowKey)
+                .filter((value) => value !== null);
+
+            if (keys.length > 0) {
+                window.localStorage.setItem(inventoryStorageKey, JSON.stringify(keys));
+            }
+        };
+
+        const restoreInventoryOrder = (container) => {
+            const raw = window.localStorage.getItem(inventoryStorageKey);
+            if (!raw) {
+                return;
+            }
+
+            let savedKeys = [];
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    savedKeys = parsed;
+                }
+            } catch (_error) {
+                window.localStorage.removeItem(inventoryStorageKey);
+                return;
+            }
+
+            if (savedKeys.length === 0) {
+                return;
+            }
+
+            const rowsByKey = new Map();
+            Array.from(container.querySelectorAll('tr')).forEach((row) => {
+                const key = rowKey(row);
+                if (key) {
+                    rowsByKey.set(key, row);
+                }
+            });
+
+            savedKeys.forEach((key) => {
+                const row = rowsByKey.get(key);
+                if (!row) {
+                    return;
+                }
+                container.appendChild(row);
+                rowsByKey.delete(key);
+            });
+
+            rowsByKey.forEach((row) => {
+                container.appendChild(row);
+            });
+        };
+
         containers.forEach((container) => {
+            restoreInventoryOrder(container);
+
             container.addEventListener('dragstart', (event) => {
                 const row = event.target.closest('tr');
                 if (!row) {
@@ -552,6 +617,7 @@ $message = flash();
                 if (draggedRow) {
                     draggedRow.style.opacity = '1';
                 }
+                saveInventoryOrder(container);
                 draggedRow = null;
             });
 
