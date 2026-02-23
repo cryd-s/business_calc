@@ -84,6 +84,11 @@ CREATE TABLE IF NOT EXISTS recipe_items (
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
     FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(120) PRIMARY KEY,
+    setting_value TEXT NOT NULL DEFAULT ''
+);
 SQL;
     } else {
         $sql = <<<'SQL'
@@ -114,6 +119,11 @@ CREATE TABLE IF NOT EXISTS recipe_items (
     CONSTRAINT fk_recipe_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
     CONSTRAINT fk_recipe_ingredient FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(120) PRIMARY KEY,
+    setting_value TEXT NOT NULL
+);
 SQL;
     }
 
@@ -121,6 +131,7 @@ SQL;
 
     ensureProductSchema($pdo, $driver);
     ensureIngredientSchema($pdo, $driver);
+    ensureAppSettingsSchema($pdo, $driver);
 }
 
 function ensureIngredientSchema(PDO $pdo, string $driver): void
@@ -149,6 +160,28 @@ function ensureProductSchema(PDO $pdo, string $driver): void
     if (!isset($columns['stock_qty'])) {
         $pdo->exec('ALTER TABLE products ADD COLUMN stock_qty INT NOT NULL DEFAULT 0');
     }
+}
+
+
+
+function ensureAppSettingsSchema(PDO $pdo, string $driver): void
+{
+    if ($driver === 'sqlite') {
+        $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(120) PRIMARY KEY,
+    setting_value TEXT NOT NULL DEFAULT ''
+);
+SQL);
+        return;
+    }
+
+    $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(120) PRIMARY KEY,
+    setting_value TEXT NOT NULL
+);
+SQL);
 }
 
 function tableColumns(PDO $pdo, string $table, string $driver): array

@@ -266,3 +266,30 @@ function shoppingList(): array
         'total' => $total,
     ];
 }
+
+function companyName(): string
+{
+    $stmt = db()->prepare('SELECT setting_value FROM app_settings WHERE setting_key = :key LIMIT 1');
+    $stmt->execute([':key' => 'company_name']);
+    $value = $stmt->fetchColumn();
+
+    return $value === false ? '' : trim((string)$value);
+}
+
+function updateCompanyName(string $name): void
+{
+    $name = trim($name);
+    $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+    if ($driver === 'sqlite') {
+        $sql = 'INSERT INTO app_settings (setting_key, setting_value) VALUES (:key, :value) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value';
+    } else {
+        $sql = 'INSERT INTO app_settings (setting_key, setting_value) VALUES (:key, :value) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)';
+    }
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute([
+        ':key' => 'company_name',
+        ':value' => $name,
+    ]);
+}
