@@ -134,6 +134,7 @@ SQL;
     ensureAppSettingsSchema($pdo, $driver);
     ensureUserAccessSchema($pdo, $driver);
     ensureShoppingHistorySchema($pdo, $driver);
+    ensureAuditLogSchema($pdo, $driver);
 }
 
 function ensureIngredientSchema(PDO $pdo, string $driver): void
@@ -272,6 +273,35 @@ SQL);
     $historyColumns = tableColumns($pdo, 'shopping_history', $driver);
     if (!isset($historyColumns['completed_by_discord_id'])) {
         $pdo->exec("ALTER TABLE shopping_history ADD COLUMN completed_by_discord_id VARCHAR(32) NOT NULL DEFAULT ''");
+    }
+}
+
+function ensureAuditLogSchema(PDO $pdo, string $driver): void
+{
+    if ($driver === 'sqlite') {
+        $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_discord_id VARCHAR(32) NOT NULL DEFAULT '',
+    actor_name VARCHAR(120) NOT NULL DEFAULT '',
+    action_key VARCHAR(120) NOT NULL,
+    target_value VARCHAR(190) NOT NULL DEFAULT '',
+    details TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+SQL);
+    } else {
+        $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    actor_discord_id VARCHAR(32) NOT NULL DEFAULT '',
+    actor_name VARCHAR(120) NOT NULL DEFAULT '',
+    action_key VARCHAR(120) NOT NULL,
+    target_value VARCHAR(190) NOT NULL DEFAULT '',
+    details TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+SQL);
     }
 }
 
