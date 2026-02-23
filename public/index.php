@@ -224,6 +224,17 @@ $message = flash();
             background: rgba(17, 35, 49, 0.8);
             margin-top: 14px;
         }
+        .autosave-form {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: stretch;
+        }
+        .autosave-note {
+            min-height: 1.1em;
+            font-size: 0.8rem;
+            color: var(--accent);
+        }
         a { color: #87e5ff; }
         @media (max-width: 1100px) {
             .content-grid { grid-template-columns: 1fr; }
@@ -384,17 +395,18 @@ $message = flash();
     <h2>Lager</h2>
     <p>Hier siehst du Gerichte und Zutaten gemeinsam. Du kannst die Reihenfolge per Drag &amp; Drop sortieren und nur die aktuelle Lagermenge pflegen.</p>
     <table>
-        <thead><tr><th>Typ</th><th>Name</th><th>Aktueller Lagerbestand</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Typ</th><th>Name</th><th>Aktueller Lagerbestand</th></tr></thead>
         <tbody id="inventory-items" class="inventory-list">
         <?php foreach ($inventoryItems as $item): ?>
             <tr draggable="true" data-item-type="<?= htmlspecialchars($item['type']) ?>" data-item-id="<?= (int)$item['id'] ?>">
                 <td><?= htmlspecialchars($item['type_label']) ?></td>
                 <td><?= htmlspecialchars($item['name']) ?></td>
                 <td>
-                    <form method="post" class="autosave-form" style="display:flex; gap:8px; align-items:center;">
+                    <form method="post" class="autosave-form">
                         <input type="hidden" name="action" value="<?= $item['type'] === 'product' ? 'product.stock.update' : 'ingredient.stock.update' ?>">
                         <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
                         <input type="number" <?= $item['type'] === 'ingredient' ? 'step="0.01"' : '' ?> name="stock_qty" value="<?= $item['type'] === 'ingredient' ? htmlspecialchars((string)$item['stock_qty']) : (int)$item['stock_qty'] ?>">
+                        <small class="autosave-note" aria-live="polite"></small>
                     </form>
                 </td>
             </tr>
@@ -518,6 +530,38 @@ $message = flash();
         autoSaveForms.forEach((form) => {
             let timeoutId = null;
             const fields = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
+            const note = form.querySelector('.autosave-note');
+
+            const showNote = (text, isError = false) => {
+                if (!note) {
+                    return;
+                }
+                note.textContent = text;
+                note.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+            };
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const formData = new FormData(form);
+
+                showNote('Speichert …');
+
+                try {
+                    const response = await window.fetch(window.location.href, {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin',
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Speichern fehlgeschlagen');
+                    }
+
+                    showNote('Gespeichert');
+                } catch (_error) {
+                    showNote('Fehler beim Speichern', true);
+                }
+            });
 
             fields.forEach((field) => {
                 field.addEventListener('input', () => {
