@@ -117,6 +117,7 @@ $companyName = companyName();
 $productForRecipe = isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
 $message = flash();
+$showSidebar = !in_array($view, ['shopping', 'dashboard', 'options'], true);
 ?>
 <!doctype html>
 <html lang="de">
@@ -191,6 +192,9 @@ $message = flash();
             margin-top: 18px;
         }
         .content-grid.shopping-view {
+            grid-template-columns: 1fr;
+        }
+        .content-grid.single-view {
             grid-template-columns: 1fr;
         }
         section {
@@ -271,7 +275,7 @@ $message = flash();
     <p class="flash"><?= htmlspecialchars($message) ?></p>
 <?php endif; ?>
 
-<div class="content-grid <?= $view === 'shopping' ? 'shopping-view' : '' ?>">
+<div class="content-grid <?= $showSidebar ? '' : 'single-view' ?> <?= $view === 'shopping' ? 'shopping-view' : '' ?>">
     <div>
 
 <?php if ($view === 'ingredients'): ?>
@@ -508,7 +512,7 @@ $message = flash();
 <?php endif; ?>
     </div>
 
-<?php if ($view !== 'shopping'): ?>
+<?php if ($showSidebar): ?>
     <div>
         <section>
             <h2>Live Überblick</h2>
