@@ -172,6 +172,23 @@ try {
     if ($action !== null) {
         requireAuth();
 
+        $adminOnlyActions = [
+            'ingredient.create',
+            'ingredient.update',
+            'ingredient.stock.update',
+            'ingredient.delete',
+            'product.create',
+            'product.update',
+            'product.stock.update',
+            'product.delete',
+            'recipe.upsert',
+            'recipe.assign',
+            'recipe.delete',
+        ];
+        if (in_array($action, $adminOnlyActions, true)) {
+            requireAdmin();
+        }
+
         if ($action === 'ingredient.create') {
             createIngredient($_POST);
             flash('Zutat angelegt.');
@@ -324,6 +341,12 @@ $user = currentUser();
 $loggedIn = isLoggedIn();
 if (!$loggedIn && !in_array($view, ['login', 'oauth-callback'], true)) {
     $view = 'login';
+}
+
+$adminOnlyViews = ['ingredients', 'products', 'recipe'];
+if ($loggedIn && !isAdminUser($user) && in_array($view, $adminOnlyViews, true)) {
+    flash('Zutaten und Gerichte sind nur für Admins sichtbar.');
+    $view = 'dashboard';
 }
 
 $ingredients = $loggedIn ? allIngredients() : [];
@@ -529,8 +552,10 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     <?php if ($loggedIn): ?>
     <nav class="pill-nav">
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
-        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
+        <?php if (isAdminUser($user)): ?>
+            <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
+            <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
+        <?php endif; ?>
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
     </nav>
@@ -837,11 +862,15 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
 <?php else: ?>
 <section>
     <h2>Dashboard</h2>
-    <p>Lege zuerst Zutaten und Gerichte an. Hinterlege Ziel- und Ist-Bestand.</p>
-    <ul>
-        <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
-        <li>Anzahl Gerichte: <?= count($products) ?></li>
-    </ul>
+    <?php if (isAdminUser($user)): ?>
+        <p>Lege zuerst Zutaten und Gerichte an. Hinterlege Ziel- und Ist-Bestand.</p>
+        <ul>
+            <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
+            <li>Anzahl Gerichte: <?= count($products) ?></li>
+        </ul>
+    <?php else: ?>
+        <p>Willkommen! Nutze Lager und Einkaufsliste für den Tagesbetrieb.</p>
+    <?php endif; ?>
 </section>
 <?php endif; ?>
     </div>
@@ -851,8 +880,10 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <section>
             <h2>Live Überblick</h2>
             <ul>
-                <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
-                <li>Anzahl Gerichte: <?= count($products) ?></li>
+                <?php if (isAdminUser($user)): ?>
+                    <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
+                    <li>Anzahl Gerichte: <?= count($products) ?></li>
+                <?php endif; ?>
                 <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</li>
             </ul>
         </section>
