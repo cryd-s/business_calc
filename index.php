@@ -3,93 +3,307 @@ require_once __DIR__ . '/src/repository.php';
 
 initSchema();
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+function appBaseUrl(): string
+{
+    $cfg = appConfig();
+    return rtrim((string)($cfg['app']['base_url'] ?? ''), '/');
+}
+
+function currentUser(): ?array
+{
+    return $_SESSION['auth_user'] ?? null;
+}
+
+function isLoggedIn(): bool
+{
+    return is_array(currentUser());
+}
+
+function isAdminUser(?array $user): bool
+{
+    return is_array($user) && (($user['discord_id'] ?? '') === discordAdminId());
+}
+
+function requireAuth(): void
+{
+    if (!isLoggedIn()) {
+        flash('Bitte zuerst mit Discord anmelden.');
+        header('Location: ?view=login');
+        exit;
+    }
+}
+
+function requireAdmin(): void
+{
+    $user = currentUser();
+    if (!isAdminUser($user)) {
+        flash('Nur Admins dürfen diese Aktion ausführen.');
+        header('Location: ?view=dashboard');
+        exit;
+    }
+}
+
+function discordAuthUrl(): string
+{
+    $cfg = appConfig()['discord'] ?? [];
+    $clientId = trim((string)($cfg['client_id'] ?? ''));
+    $redirectUri = trim((string)($cfg['redirect_uri'] ?? ''));
+
+    if ($clientId === '' || $redirectUri === '') {
+        return '#';
+    }
+
+    $state = bin2hex(random_bytes(16));
+    $_SESSION['discord_oauth_state'] = $state;
+
+    $params = [
+        'client_id' => $clientId,
+        'redirect_uri' => $redirectUri,
+        'response_type' => 'code',
+        'scope' => 'identify',
+        'state' => $state,
+        'prompt' => 'none',
+    ];
+
+    return 'https://discord.com/api/oauth2/authorize?' . http_build_query($params);
+}
+
+function postFormJson(string $url, array $data): array
+{
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-type: application/x-www-form-urlencoded
+",
+            'content' => http_build_query($data),
+            'ignore_errors' => true,
+            'timeout' => 15,
+        ],
+    ]);
+
+    $raw = file_get_contents($url, false, $context);
+    if (!is_string($raw)) {
+        throw new RuntimeException('Discord API konnte nicht erreicht werden.');
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        throw new RuntimeException('Ungültige Discord-Antwort erhalten.');
+    }
+
+    return $decoded;
+}
+
+function getJson(string $url, string $accessToken): array
+{
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => "Authorization: Bearer {$accessToken}
+",
+            'ignore_errors' => true,
+            'timeout' => 15,
+        ],
+    ]);
+
+    $raw = file_get_contents($url, false, $context);
+    if (!is_string($raw)) {
+        throw new RuntimeException('Discord Benutzerprofil konnte nicht geladen werden.');
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        throw new RuntimeException('Ungültige Antwort vom Discord-Benutzerprofil.');
+    }
+
+    return $decoded;
+}
+
 $view = $_GET['view'] ?? 'dashboard';
 $action = $_POST['action'] ?? null;
 
 try {
-    if ($action === 'ingredient.create') {
-        createIngredient($_POST);
-        flash('Zutat angelegt.');
-        header('Location: ?view=ingredients');
-        exit;
-    }
-    if ($action === 'ingredient.update') {
-        updateIngredient((int)$_POST['id'], $_POST);
-        flash('Zutat aktualisiert.');
-        header('Location: ?view=ingredients');
-        exit;
-    }
-    if ($action === 'ingredient.stock.update') {
-        updateIngredientStock((int)$_POST['id'], (float)($_POST['stock_qty'] ?? 0));
-        flash('Lagerbestand der Zutat aktualisiert.');
-        header('Location: ?view=inventory');
-        exit;
-    }
-    if ($action === 'ingredient.delete') {
-        deleteIngredient((int)$_POST['id']);
-        flash('Zutat gelöscht.');
-        header('Location: ?view=ingredients');
+    if ($action === 'auth.logout') {
+        unset($_SESSION['auth_user']);
+        flash('Du wurdest abgemeldet.');
+        header('Location: ?view=login');
         exit;
     }
 
-    if ($action === 'product.create') {
-        createProduct($_POST);
-        flash('Gericht angelegt.');
-        header('Location: ?view=products');
-        exit;
-    }
-    if ($action === 'product.update') {
-        updateProduct((int)$_POST['id'], $_POST);
-        flash('Gericht aktualisiert.');
-        header('Location: ?view=products');
-        exit;
-    }
-    if ($action === 'product.stock.update') {
-        updateProductStock((int)$_POST['id'], (int)($_POST['stock_qty'] ?? 0));
-        flash('Lagerbestand des Gerichts aktualisiert.');
-        header('Location: ?view=inventory');
-        exit;
-    }
-    if ($action === 'product.delete') {
-        deleteProduct((int)$_POST['id']);
-        flash('Gericht gelöscht.');
-        header('Location: ?view=products');
+    if ($action === 'admin.user.approve') {
+        requireAdmin();
+        setUserApproval((string)($_POST['discord_id'] ?? ''), true);
+        flash('Mitarbeiter freigeschaltet.');
+        header('Location: ?view=admin');
         exit;
     }
 
-    if ($action === 'recipe.upsert') {
-        upsertRecipeItem((int)$_POST['product_id'], (int)$_POST['ingredient_id'], (float)$_POST['qty_per_product']);
-        flash('Rezeptposition gespeichert.');
-        header('Location: ?view=recipe&product_id=' . (int)$_POST['product_id']);
+    if ($action === 'admin.user.revoke') {
+        requireAdmin();
+        setUserApproval((string)($_POST['discord_id'] ?? ''), false);
+        flash('Freigabe entfernt.');
+        header('Location: ?view=admin');
         exit;
     }
-    if ($action === 'recipe.assign') {
-        assignRecipeItems((int)$_POST['product_id'], $_POST['ingredient_qty'] ?? []);
-        flash('Zutaten für das Gericht zugewiesen.');
-        header('Location: ?view=products');
-        exit;
+
+    if ($action !== null) {
+        requireAuth();
+
+        if ($action === 'ingredient.create') {
+            createIngredient($_POST);
+            flash('Zutat angelegt.');
+            header('Location: ?view=ingredients');
+            exit;
+        }
+        if ($action === 'ingredient.update') {
+            updateIngredient((int)$_POST['id'], $_POST);
+            flash('Zutat aktualisiert.');
+            header('Location: ?view=ingredients');
+            exit;
+        }
+        if ($action === 'ingredient.stock.update') {
+            updateIngredientStock((int)$_POST['id'], (float)($_POST['stock_qty'] ?? 0));
+            flash('Lagerbestand der Zutat aktualisiert.');
+            header('Location: ?view=inventory');
+            exit;
+        }
+        if ($action === 'ingredient.delete') {
+            deleteIngredient((int)$_POST['id']);
+            flash('Zutat gelöscht.');
+            header('Location: ?view=ingredients');
+            exit;
+        }
+
+        if ($action === 'product.create') {
+            createProduct($_POST);
+            flash('Gericht angelegt.');
+            header('Location: ?view=products');
+            exit;
+        }
+        if ($action === 'product.update') {
+            updateProduct((int)$_POST['id'], $_POST);
+            flash('Gericht aktualisiert.');
+            header('Location: ?view=products');
+            exit;
+        }
+        if ($action === 'product.stock.update') {
+            updateProductStock((int)$_POST['id'], (int)($_POST['stock_qty'] ?? 0));
+            flash('Lagerbestand des Gerichts aktualisiert.');
+            header('Location: ?view=inventory');
+            exit;
+        }
+        if ($action === 'product.delete') {
+            deleteProduct((int)$_POST['id']);
+            flash('Gericht gelöscht.');
+            header('Location: ?view=products');
+            exit;
+        }
+
+        if ($action === 'recipe.upsert') {
+            upsertRecipeItem((int)$_POST['product_id'], (int)$_POST['ingredient_id'], (float)$_POST['qty_per_product']);
+            flash('Rezeptposition gespeichert.');
+            header('Location: ?view=recipe&product_id=' . (int)$_POST['product_id']);
+            exit;
+        }
+        if ($action === 'recipe.assign') {
+            assignRecipeItems((int)$_POST['product_id'], $_POST['ingredient_qty'] ?? []);
+            flash('Zutaten für das Gericht zugewiesen.');
+            header('Location: ?view=products');
+            exit;
+        }
+        if ($action === 'recipe.delete') {
+            $productId = (int)$_POST['product_id'];
+            deleteRecipeItem((int)$_POST['id']);
+            flash('Rezeptposition gelöscht.');
+            header('Location: ?view=recipe&product_id=' . $productId);
+            exit;
+        }
+        if ($action === 'options.company.update') {
+            updateCompanyName((string)($_POST['company_name'] ?? ''));
+            flash('Unternehmensname gespeichert.');
+            header('Location: ?view=options');
+            exit;
+        }
     }
-    if ($action === 'recipe.delete') {
-        $productId = (int)$_POST['product_id'];
-        deleteRecipeItem((int)$_POST['id']);
-        flash('Rezeptposition gelöscht.');
-        header('Location: ?view=recipe&product_id=' . $productId);
-        exit;
-    }
-    if ($action === 'options.company.update') {
-        updateCompanyName((string)($_POST['company_name'] ?? ''));
-        flash('Unternehmensname gespeichert.');
-        header('Location: ?view=options');
+
+    if ($view === 'oauth-callback') {
+        $cfg = appConfig()['discord'] ?? [];
+        $clientId = trim((string)($cfg['client_id'] ?? ''));
+        $clientSecret = trim((string)($cfg['client_secret'] ?? ''));
+        $redirectUri = trim((string)($cfg['redirect_uri'] ?? ''));
+
+        if ($clientId === '' || $clientSecret === '' || $redirectUri === '') {
+            throw new RuntimeException('Discord OAuth ist nicht vollständig konfiguriert.');
+        }
+
+        $state = (string)($_GET['state'] ?? '');
+        $expectedState = (string)($_SESSION['discord_oauth_state'] ?? '');
+        unset($_SESSION['discord_oauth_state']);
+        if ($state === '' || !hash_equals($expectedState, $state)) {
+            throw new RuntimeException('Ungültiger OAuth-Status. Bitte erneut einloggen.');
+        }
+
+        $code = (string)($_GET['code'] ?? '');
+        if ($code === '') {
+            throw new RuntimeException('Discord hat keinen Code geliefert.');
+        }
+
+        $tokenData = postFormJson('https://discord.com/api/oauth2/token', [
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+        ]);
+
+        $accessToken = (string)($tokenData['access_token'] ?? '');
+        if ($accessToken === '') {
+            throw new RuntimeException('Discord Access-Token konnte nicht gelesen werden.');
+        }
+
+        $discordUser = getJson('https://discord.com/api/users/@me', $accessToken);
+        $discordId = trim((string)($discordUser['id'] ?? ''));
+        $displayName = trim((string)($discordUser['global_name'] ?? $discordUser['username'] ?? ''));
+        if ($discordId === '') {
+            throw new RuntimeException('Discord ID fehlt in der Antwort.');
+        }
+
+        $user = createOrUpdateUserAccess($discordId, $displayName);
+        if ((int)$user['is_approved'] !== 1 && !isAdminUser($user)) {
+            unset($_SESSION['auth_user']);
+            flash('Du bist noch nicht freigeschaltet. Bitte Admin kontaktieren.');
+            header('Location: ?view=login');
+            exit;
+        }
+
+        $_SESSION['auth_user'] = [
+            'discord_id' => $user['discord_id'],
+            'display_name' => $user['display_name'],
+            'is_approved' => (int)$user['is_approved'],
+        ];
+
+        flash('Erfolgreich mit Discord eingeloggt.');
+        header('Location: ?view=dashboard');
         exit;
     }
 } catch (Throwable $e) {
     flash('Fehler: ' . $e->getMessage());
 }
 
-$ingredients = allIngredients();
-$products = allProducts();
-$inventoryIngredients = allIngredientsByStockOrder();
-$inventoryProducts = allProductsByStockOrder();
+$user = currentUser();
+$loggedIn = isLoggedIn();
+if (!$loggedIn && !in_array($view, ['login', 'oauth-callback'], true)) {
+    $view = 'login';
+}
+
+$ingredients = $loggedIn ? allIngredients() : [];
+$products = $loggedIn ? allProducts() : [];
+$inventoryIngredients = $loggedIn ? allIngredientsByStockOrder() : [];
+$inventoryProducts = $loggedIn ? allProductsByStockOrder() : [];
 $inventoryItems = [];
 foreach ($inventoryProducts as $product) {
     $inventoryItems[] = [
@@ -112,10 +326,12 @@ foreach ($inventoryIngredients as $ingredient) {
 usort($inventoryItems, static function (array $a, array $b): int {
     return strcasecmp($a['name'], $b['name']);
 });
-$shoppingList = shoppingList();
+$shoppingList = $loggedIn ? shoppingList() : ['items' => [], 'total' => 0];
 $companyName = companyName();
-$productForRecipe = isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
+$productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
+$adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
+$discordLoginUrl = discordAuthUrl();
 $message = flash();
 ?>
 <!doctype html>
@@ -263,8 +479,18 @@ $message = flash();
 <div class="app-shell">
     <header class="top-bar">
         <h1><?= htmlspecialchars(trim(($companyName !== '' ? $companyName . ' ' : '') . 'Business Verwaltung & Einkaufsliste')) ?></h1>
+        <?php if ($loggedIn): ?>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <small>Angemeldet als <?= htmlspecialchars((string)($user['display_name'] ?? $user['discord_id'] ?? '')) ?></small>
+                <form method="post" style="margin:0;">
+                    <input type="hidden" name="action" value="auth.logout">
+                    <button type="submit">Logout</button>
+                </form>
+            </div>
+        <?php endif; ?>
     </header>
 
+    <?php if ($loggedIn): ?>
     <nav class="pill-nav">
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
         <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
@@ -272,16 +498,72 @@ $message = flash();
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
         <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
+        <?php if (isAdminUser($user)): ?>
+            <a class="<?= $view === 'admin' ? 'active' : '' ?>" href="?view=admin">Admin</a>
+        <?php endif; ?>
     </nav>
+    <?php endif; ?>
 
 <?php if ($message): ?>
     <p class="flash"><?= htmlspecialchars($message) ?></p>
 <?php endif; ?>
 
-<div class="content-grid <?= $view === 'shopping' ? 'shopping-view' : '' ?>">
+<div class="content-grid <?= in_array($view, ['shopping', 'login'], true) ? 'shopping-view' : '' ?>">
     <div>
 
-<?php if ($view === 'ingredients'): ?>
+<?php if ($view === 'login'): ?>
+<section>
+    <h2>Discord Login</h2>
+    <p>Bitte melde dich mit Discord an. Deine Discord-ID dient als eindeutiger Identifier. Neue Nutzer müssen einmalig von einem Admin freigeschaltet werden.</p>
+    <?php if ($discordLoginUrl === '#'): ?>
+        <p>Discord OAuth ist noch nicht konfiguriert. Ergänze bitte die Werte in <code>config/config.php</code>.</p>
+    <?php else: ?>
+        <a href="<?= htmlspecialchars($discordLoginUrl) ?>"><button type="button">Mit Discord einloggen</button></a>
+    <?php endif; ?>
+</section>
+
+<?php elseif ($view === 'admin' && isAdminUser($user)): ?>
+<section>
+    <h2>Admin: Mitarbeiter freischalten</h2>
+    <p>Hier siehst du alle Nutzer, die sich via Discord angemeldet haben.</p>
+    <table>
+        <thead><tr><th>Discord ID</th><th>Name</th><th>Status</th><th>Aktion</th></tr></thead>
+        <tbody>
+        <?php foreach ($adminUsers as $entry): ?>
+            <tr>
+                <td><?= htmlspecialchars($entry['discord_id']) ?></td>
+                <td><?= htmlspecialchars($entry['display_name']) ?></td>
+                <td>
+                    <?php if ($entry['discord_id'] === discordAdminId()): ?>
+                        Admin (immer aktiv)
+                    <?php else: ?>
+                        <?= (int)$entry['is_approved'] === 1 ? 'Freigeschaltet' : 'Gesperrt' ?>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($entry['discord_id'] !== discordAdminId()): ?>
+                        <?php if ((int)$entry['is_approved'] === 1): ?>
+                            <form method="post" style="display:inline">
+                                <input type="hidden" name="action" value="admin.user.revoke">
+                                <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
+                                <button class="danger" type="submit">Sperren</button>
+                            </form>
+                        <?php else: ?>
+                            <form method="post" style="display:inline">
+                                <input type="hidden" name="action" value="admin.user.approve">
+                                <input type="hidden" name="discord_id" value="<?= htmlspecialchars($entry['discord_id']) ?>">
+                                <button type="submit">Freischalten</button>
+                            </form>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</section>
+
+<?php elseif ($view === 'ingredients'): ?>
 <section>
     <h2>Zutaten</h2>
     <form method="post" class="grid">
@@ -515,7 +797,7 @@ $message = flash();
 <?php endif; ?>
     </div>
 
-<?php if ($view !== 'shopping'): ?>
+<?php if ($loggedIn && $view !== 'shopping' && $view !== 'login'): ?>
     <div>
         <section>
             <h2>Live Überblick</h2>

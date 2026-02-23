@@ -12,4 +12,14 @@ return [
         // Option B (lokal): eigene DSN verwenden, z. B. sqlite
         // 'dsn' => 'sqlite:' . __DIR__ . '/../var/app.sqlite',
     ],
+    'app' => [
+        // Öffentliche URL deiner App ohne Slash am Ende
+        'base_url' => 'https://deine-domain.tld',
+    ],
+    'discord' => [
+        // Werte aus deinem Discord Developer Portal
+        'client_id' => 'dein_client_id',
+        'client_secret' => 'dein_client_secret',
+        'redirect_uri' => 'https://deine-domain.tld/?view=oauth-callback',
+    ],
 ];
