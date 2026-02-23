@@ -303,53 +303,42 @@ $message = flash();
 
 <?php elseif ($view === 'products'): ?>
 <section>
-    <h2>Gerichte</h2>
-    <form method="post" class="grid">
+    <h2>Direktvermarktung</h2>
+    <p>Direktes Gericht: Preis wird manuell gepflegt.</p>
+    <form method="post" class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
         <input type="hidden" name="action" value="product.create">
+        <input type="hidden" name="product_type" value="direct">
         <div><label>Name<input required name="name"></label></div>
-        <div><label>Typ
-            <select name="product_type">
-                <option value="recipe">Kombination mehrerer Zutaten</option>
-                <option value="direct">Direktes Gericht</option>
-            </select>
-        </label></div>
-        <div><label>Preis pro Stück (nur bei direktem Gericht)<input step="0.01" type="number" name="direct_purchase_price" value="0"></label></div>
+        <div><label>Preis pro Stück<input required step="0.01" type="number" name="direct_purchase_price" value="0"></label></div>
         <div><label>Zielbestand<input type="number" name="target_qty" value="0"></label></div>
-        <div><label>Ist-Bestand<input type="number" name="stock_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Name</th><th>Typ</th><th>Ziel</th><th>Ist</th><th>Preis pro Stück</th><th>Rezept</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Name</th><th>Ziel</th><th>Preis pro Stück</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($products as $product): ?>
+            <?php if ((int)$product['is_direct_purchase'] !== 1) { continue; } ?>
+            <?php $formId = 'product-direct-' . (int)$product['id']; ?>
             <tr>
-                <form method="post">
-                    <input type="hidden" name="action" value="product.update">
-                    <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
-                    <td><input name="name" value="<?= htmlspecialchars($product['name']) ?>"></td>
-                    <td>
-                        <select name="product_type">
-                            <option value="recipe" <?= (int)$product['is_direct_purchase'] === 0 ? 'selected' : '' ?>>Kombi-Zutaten</option>
-                            <option value="direct" <?= (int)$product['is_direct_purchase'] === 1 ? 'selected' : '' ?>>Direktes Gericht</option>
-                        </select>
-                    </td>
-                    <td><input type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
-                    <td><input type="number" name="stock_qty" value="<?= (int)$product['stock_qty'] ?>"></td>
-                    <td><input type="number" step="0.01" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>" placeholder="nur direkt"></td>
-                    <td>
-                        <a href="?view=recipe&product_id=<?= (int)$product['id'] ?>">Bearbeiten (<?= (int)$product['ingredient_count'] ?>)</a><br>
-                        kalkuliert: <?= number_format((float)$product['calculated_recipe_price'], 2, ',', '.') ?> €
-                    </td>
-                    <td>
-                        <button>Speichern</button>
-                </form>
-                <form method="post" style="display:inline">
-                    <input type="hidden" name="action" value="product.delete">
-                    <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
-                    <button class="danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
-                </form>
-                    </td>
+                <td>
+                    <form method="post" class="autosave-form" id="<?= $formId ?>">
+                        <input type="hidden" name="action" value="product.update">
+                        <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
+                        <input type="hidden" name="product_type" value="direct">
+                        <input form="<?= $formId ?>" name="name" value="<?= htmlspecialchars($product['name']) ?>">
+                        <small class="autosave-note" aria-live="polite"></small>
+                    </form>
+                </td>
+                <td><input form="<?= $formId ?>" type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
+                <td><input form="<?= $formId ?>" type="number" step="0.01" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>"></td>
+                <td>
+                    <form method="post" style="display:inline">
+                        <input type="hidden" name="action" value="product.delete">
+                        <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
+                        <button class="danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -357,37 +346,47 @@ $message = flash();
 </section>
 
 <section>
-    <h3>Zutaten einer Kombination zuweisen</h3>
-    <p>Wähle ein Kombi-Gericht aus und trage die benötigte Stückzahl je Zutat ein. Leere/Feld 0 wird ignoriert.</p>
-    <form method="post">
-        <input type="hidden" name="action" value="recipe.assign">
-        <div class="grid" style="grid-template-columns: 2fr 1fr; margin-bottom: 10px;">
-            <div><label>Gericht (Kombination)
-                <select name="product_id" required>
-                    <?php foreach ($products as $product): ?>
-                        <?php if ((int)$product['is_direct_purchase'] === 0): ?>
-                            <option value="<?= (int)$product['id'] ?>"><?= htmlspecialchars($product['name']) ?></option>
-                        <?php endif; ?>
-                    <?php endforeach; ?>
-                </select>
-            </label></div>
-            <div><button type="submit">Zuweisen</button></div>
-        </div>
-
-        <table>
-            <thead><tr><th>Zutat</th><th>Stück pro Gericht</th></tr></thead>
-            <tbody>
-            <?php foreach ($ingredients as $ingredient): ?>
-                <tr>
-                    <td><?= htmlspecialchars($ingredient['name']) ?></td>
-                    <td>
-                        <input type="number" min="0" step="0.01" name="ingredient_qty[<?= (int)$ingredient['id'] ?>]" value="0">
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
+    <h2>Rezepte</h2>
+    <p>Kombination mehrerer Zutaten: Preis wird automatisch aus den Zutaten berechnet.</p>
+    <form method="post" class="grid" style="grid-template-columns: 2fr 1fr 1fr;">
+        <input type="hidden" name="action" value="product.create">
+        <input type="hidden" name="product_type" value="recipe">
+        <div><label>Name<input required name="name"></label></div>
+        <div><label>Zielbestand<input type="number" name="target_qty" value="0"></label></div>
+        <div><button type="submit">Anlegen</button></div>
     </form>
+
+    <table>
+        <thead><tr><th>Name</th><th>Ziel</th><th>Automatischer Preis</th><th>Rezept</th><th>Aktion</th></tr></thead>
+        <tbody>
+        <?php foreach ($products as $product): ?>
+            <?php if ((int)$product['is_direct_purchase'] !== 0) { continue; } ?>
+            <?php $formId = 'product-recipe-' . (int)$product['id']; ?>
+            <tr>
+                <td>
+                    <form method="post" class="autosave-form" id="<?= $formId ?>">
+                        <input type="hidden" name="action" value="product.update">
+                        <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
+                        <input type="hidden" name="product_type" value="recipe">
+                        <input type="hidden" name="direct_purchase_price" value="0">
+                        <input form="<?= $formId ?>" name="name" value="<?= htmlspecialchars($product['name']) ?>">
+                        <small class="autosave-note" aria-live="polite"></small>
+                    </form>
+                </td>
+                <td><input form="<?= $formId ?>" type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
+                <td><?= number_format((float)$product['calculated_recipe_price'], 2, ',', '.') ?> €</td>
+                <td><a href="?view=recipe&product_id=<?= (int)$product['id'] ?>">Bearbeiten (<?= (int)$product['ingredient_count'] ?>)</a></td>
+                <td>
+                    <form method="post" style="display:inline">
+                        <input type="hidden" name="action" value="product.delete">
+                        <input type="hidden" name="id" value="<?= (int)$product['id'] ?>">
+                        <button class="danger" onclick="return confirm('Wirklich löschen?')">Löschen</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
 </section>
 
 <?php elseif ($view === 'inventory'): ?>

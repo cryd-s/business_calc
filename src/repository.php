@@ -98,8 +98,8 @@ function createProduct(array $input): void
         ':name' => trim($input['name']),
         ':price' => $directPrice,
         ':is_direct_purchase' => $isDirectPurchase,
-        ':target' => (int)$input['target_qty'],
-        ':stock' => (int)$input['stock_qty'],
+        ':target' => (int)($input['target_qty'] ?? 0),
+        ':stock' => (int)($input['stock_qty'] ?? 0),
     ]);
 }
 
@@ -113,8 +113,8 @@ function updateProduct(int $id, array $input): void
         ':name' => trim($input['name']),
         ':price' => $directPrice,
         ':is_direct_purchase' => $isDirectPurchase,
-        ':target' => (int)$input['target_qty'],
-        ':stock' => (int)$input['stock_qty'],
+        ':target' => (int)($input['target_qty'] ?? 0),
+        ':stock' => (int)($input['stock_qty'] ?? 0),
     ]);
 }
 
