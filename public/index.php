@@ -51,6 +51,12 @@ try {
         header('Location: ?view=recipe&product_id=' . (int)$_POST['product_id']);
         exit;
     }
+    if ($action === 'recipe.assign') {
+        assignRecipeItems((int)$_POST['product_id'], $_POST['ingredient_qty'] ?? []);
+        flash('Zutaten für das Gericht zugewiesen.');
+        header('Location: ?view=products');
+        exit;
+    }
     if ($action === 'recipe.delete') {
         $productId = (int)$_POST['product_id'];
         deleteRecipeItem((int)$_POST['id']);
@@ -298,6 +304,40 @@ $message = flash();
         <?php endforeach; ?>
         </tbody>
     </table>
+</section>
+
+<section>
+    <h3>Zutaten einer Kombination zuweisen</h3>
+    <p>Wähle ein Kombi-Gericht aus und trage die benötigte Stückzahl je Zutat ein. Leere/Feld 0 wird ignoriert.</p>
+    <form method="post">
+        <input type="hidden" name="action" value="recipe.assign">
+        <div class="grid" style="grid-template-columns: 2fr 1fr; margin-bottom: 10px;">
+            <div><label>Gericht (Kombination)
+                <select name="product_id" required>
+                    <?php foreach ($products as $product): ?>
+                        <?php if ((int)$product['is_direct_purchase'] === 0): ?>
+                            <option value="<?= (int)$product['id'] ?>"><?= htmlspecialchars($product['name']) ?></option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label></div>
+            <div><button type="submit">Zuweisen</button></div>
+        </div>
+
+        <table>
+            <thead><tr><th>Zutat</th><th>Stück pro Gericht</th></tr></thead>
+            <tbody>
+            <?php foreach ($ingredients as $ingredient): ?>
+                <tr>
+                    <td><?= htmlspecialchars($ingredient['name']) ?></td>
+                    <td>
+                        <input type="number" min="0" step="0.01" name="ingredient_qty[<?= (int)$ingredient['id'] ?>]" value="0">
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </form>
 </section>
 
 <?php elseif ($view === 'recipe' && $productForRecipe): ?>
