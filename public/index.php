@@ -528,7 +528,17 @@ $message = flash();
 
         autoSaveForms.forEach((form) => {
             let timeoutId = null;
-            const fields = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
+            const fields = Array.from(form.elements).filter((field) => {
+                if (!(field instanceof HTMLElement)) {
+                    return false;
+                }
+
+                if (field.tagName === 'BUTTON') {
+                    return false;
+                }
+
+                return !(field instanceof HTMLInputElement && field.type === 'hidden');
+            });
             const note = form.querySelector('.autosave-note');
 
             const showNote = (text, isError = false) => {
