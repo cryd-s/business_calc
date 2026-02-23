@@ -124,6 +124,9 @@ function getJson(string $url, string $accessToken): array
 }
 
 $view = $_GET['view'] ?? 'dashboard';
+if (isset($_GET['code']) || isset($_GET['error'])) {
+    $view = 'oauth-callback';
+}
 $action = $_POST['action'] ?? null;
 
 try {
@@ -231,6 +234,11 @@ try {
     }
 
     if ($view === 'oauth-callback') {
+        $oauthError = trim((string)($_GET['error'] ?? ''));
+        if ($oauthError !== '') {
+            throw new RuntimeException('Discord Login wurde abgebrochen oder verweigert (' . $oauthError . ').');
+        }
+
         $cfg = appConfig()['discord'] ?? [];
         $clientId = trim((string)($cfg['client_id'] ?? ''));
         $clientSecret = trim((string)($cfg['client_secret'] ?? ''));
