@@ -186,6 +186,10 @@ SQL;
 
 function updateProductStock(int $id, int $stockQty): void
 {
+    if ($stockQty < 0) {
+        throw new InvalidArgumentException('Lagerbestand darf nicht negativ sein.');
+    }
+
     $stmt = db()->prepare('UPDATE products SET stock_qty = :stock_qty WHERE id = :id');
     $stmt->execute([
         ':id' => $id,
@@ -395,5 +399,36 @@ function updateCompanyName(string $name): void
     $stmt->execute([
         ':key' => 'company_name',
         ':value' => $name,
+    ]);
+}
+
+function discordWebhookUrl(): string
+{
+    $stmt = db()->prepare('SELECT setting_value FROM app_settings WHERE setting_key = :key LIMIT 1');
+    $stmt->execute([':key' => 'discord_webhook_url']);
+    $value = $stmt->fetchColumn();
+
+    return $value === false ? '' : trim((string)$value);
+}
+
+function updateDiscordWebhookUrl(string $url): void
+{
+    $url = trim($url);
+    if ($url !== '' && !filter_var($url, FILTER_VALIDATE_URL)) {
+        throw new InvalidArgumentException('Webhook-URL ist ungültig.');
+    }
+
+    $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+    if ($driver === 'sqlite') {
+        $sql = 'INSERT INTO app_settings (setting_key, setting_value) VALUES (:key, :value) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value';
+    } else {
+        $sql = 'INSERT INTO app_settings (setting_key, setting_value) VALUES (:key, :value) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)';
+    }
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute([
+        ':key' => 'discord_webhook_url',
+        ':value' => $url,
     ]);
 }

@@ -123,6 +123,73 @@ function getJson(string $url, string $accessToken): array
     return $decoded;
 }
 
+function postJson(string $url, array $payload): void
+{
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-type: application/json\r\n",
+            'content' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'ignore_errors' => true,
+            'timeout' => 15,
+        ],
+    ]);
+
+    $raw = file_get_contents($url, false, $context);
+    if ($raw === false) {
+        throw new RuntimeException('Discord Webhook konnte nicht erreicht werden.');
+    }
+
+    $statusLine = $http_response_header[0] ?? '';
+    if (!preg_match('/\s(2\d\d)\s/', $statusLine)) {
+        throw new RuntimeException('Discord Webhook antwortete mit Fehler: ' . $statusLine);
+    }
+}
+
+function sendShoppingListWebhook(array $shoppingList, string $companyName, ?array $user): void
+{
+    $webhookUrl = discordWebhookUrl();
+    if ($webhookUrl === '') {
+        throw new RuntimeException('Bitte zuerst eine Discord Webhook-URL unter Optionen hinterlegen.');
+    }
+
+    $lines = [];
+    foreach ($shoppingList['items'] as $row) {
+        $qty = number_format((float)$row['qty'], 2, ',', '.');
+        $lines[] = sprintf('- %s: %s', (string)$row['name'], $qty);
+    }
+
+    if ($lines === []) {
+        $lines[] = 'Kein Einkaufsbedarf vorhanden.';
+    }
+
+    $completedBy = trim((string)($user['display_name'] ?? 'Unbekannt'));
+    $titlePrefix = trim($companyName) !== '' ? $companyName . ' · ' : '';
+
+    $payload = [
+        'embeds' => [[
+            'title' => $titlePrefix . 'Einkaufsliste abgeschlossen',
+            'description' => implode("\n", $lines),
+            'color' => 1755602,
+            'fields' => [
+                [
+                    'name' => 'Gesamtkosten',
+                    'value' => number_format((float)$shoppingList['total'], 2, ',', '.') . ' $',
+                    'inline' => true,
+                ],
+                [
+                    'name' => 'Abgeschlossen von',
+                    'value' => $completedBy !== '' ? $completedBy : 'Unbekannt',
+                    'inline' => true,
+                ],
+            ],
+            'timestamp' => gmdate('c'),
+        ]],
+    ];
+
+    postJson($webhookUrl, $payload);
+}
+
 $view = $_GET['view'] ?? 'dashboard';
 if (isset($_GET['code']) || isset($_GET['error'])) {
     $view = 'oauth-callback';
@@ -265,6 +332,20 @@ try {
             header('Location: ?view=admin&admin_tab=options');
             exit;
         }
+        if ($action === 'options.webhook.update') {
+            requireAdmin();
+            updateDiscordWebhookUrl((string)($_POST['discord_webhook_url'] ?? ''));
+            flash('Discord Webhook gespeichert.');
+            header('Location: ?view=admin&admin_tab=options');
+            exit;
+        }
+        if ($action === 'shopping.complete') {
+            $list = shoppingList();
+            sendShoppingListWebhook($list, companyName(), currentUser());
+            flash('Einkaufsliste abgeschlossen und an Discord gesendet. Lagerbestände wurden nicht verändert.');
+            header('Location: ?view=shopping');
+            exit;
+        }
     }
 
     if ($view === 'oauth-callback') {
@@ -377,6 +458,7 @@ usort($inventoryItems, static function (array $a, array $b): int {
 });
 $shoppingList = $loggedIn ? shoppingList() : ['items' => [], 'total' => 0];
 $companyName = companyName();
+$discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
 $productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
 $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
@@ -851,6 +933,12 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <div><label>Unternehmensname<input name="company_name" value="<?= htmlspecialchars($companyName) ?>" placeholder="z. B. Muster GmbH"></label></div>
         <div><button type="submit">Speichern</button></div>
     </form>
+
+    <form method="post" class="grid" style="grid-template-columns: 3fr 1fr; margin-top: 12px;">
+        <input type="hidden" name="action" value="options.webhook.update">
+        <div><label>Discord Webhook URL<input name="discord_webhook_url" value="<?= htmlspecialchars($discordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
+        <div><button type="submit">Webhook speichern</button></div>
+    </form>
 </section>
 <?php elseif ($view === 'shopping'): ?>
 <section>
@@ -871,6 +959,10 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         </tbody>
     </table>
     <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</strong></p>
+    <form method="post" style="margin-top: 12px;">
+        <input type="hidden" name="action" value="shopping.complete">
+        <button type="submit">Einkaufsliste abschließen</button>
+    </form>
 </section>
 <?php else: ?>
 <section>
