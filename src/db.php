@@ -193,24 +193,34 @@ CREATE TABLE IF NOT EXISTS user_access (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     discord_id VARCHAR(32) NOT NULL UNIQUE,
     display_name VARCHAR(120) NOT NULL DEFAULT '',
+    is_admin INTEGER NOT NULL DEFAULT 0,
     is_approved INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 SQL);
-        return;
-    }
-
-    $pdo->exec(<<<'SQL'
+    } else {
+        $pdo->exec(<<<'SQL'
 CREATE TABLE IF NOT EXISTS user_access (
     id INT AUTO_INCREMENT PRIMARY KEY,
     discord_id VARCHAR(32) NOT NULL UNIQUE,
     display_name VARCHAR(120) NOT NULL DEFAULT '',
+    is_admin TINYINT(1) NOT NULL DEFAULT 0,
     is_approved TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 SQL);
+    }
+
+    $columns = tableColumns($pdo, 'user_access', $driver);
+    if (!isset($columns['is_admin'])) {
+        $type = $driver === 'sqlite' ? 'INTEGER' : 'TINYINT(1)';
+        $pdo->exec("ALTER TABLE user_access ADD COLUMN is_admin {$type} NOT NULL DEFAULT 0");
+    }
+
+    $stmt = $pdo->prepare('UPDATE user_access SET is_admin = 1, is_approved = 1 WHERE discord_id = :discord_id');
+    $stmt->execute([':discord_id' => discordAdminId()]);
 }
 
 function tableColumns(PDO $pdo, string $table, string $driver): array
