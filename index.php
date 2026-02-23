@@ -450,6 +450,20 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
             background: rgba(8, 14, 29, 0.8);
             border: 1px solid var(--panel-border);
         }
+        .admin-nav-wrapper {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .admin-nav-label {
+            color: var(--muted);
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            font-size: 0.82rem;
+        }
         nav a {
             text-decoration: none;
             color: var(--text);
@@ -552,22 +566,21 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     <?php if ($loggedIn): ?>
     <nav class="pill-nav">
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
-        <?php if (isAdminUser($user)): ?>
-            <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-            <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Gerichte</a>
-        <?php endif; ?>
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
     </nav>
     <?php endif; ?>
 
     <?php if ($loggedIn && isAdminUser($user)): ?>
-    <nav class="pill-nav" style="margin-top:10px;">
-        <a class="<?= $view === 'admin' && $adminTab === 'options' ? 'active' : '' ?>" href="?view=admin&admin_tab=options">Optionen</a>
-        <a class="<?= $view === 'admin' && $adminTab === 'employees' ? 'active' : '' ?>" href="?view=admin&admin_tab=employees">Mitarbeiter</a>
-        <a class="<?= $view === 'admin' && $adminTab === 'products' ? 'active' : '' ?>" href="?view=admin&admin_tab=products">Gerichte</a>
-        <a class="<?= $view === 'admin' && $adminTab === 'ingredients' ? 'active' : '' ?>" href="?view=admin&admin_tab=ingredients">Zutaten</a>
-    </nav>
+    <div class="admin-nav-wrapper">
+        <span class="admin-nav-label">Admin-Menü</span>
+        <nav class="pill-nav" style="margin-top:0;">
+            <a class="<?= ($view === 'ingredients') || ($view === 'admin' && $adminTab === 'ingredients') ? 'active' : '' ?>" href="?view=admin&admin_tab=ingredients">Zutaten</a>
+            <a class="<?= ($view === 'products') || ($view === 'admin' && $adminTab === 'products') ? 'active' : '' ?>" href="?view=admin&admin_tab=products">Rezepte</a>
+            <a class="<?= ($view === 'options') || ($view === 'admin' && $adminTab === 'options') ? 'active' : '' ?>" href="?view=admin&admin_tab=options">Optionen</a>
+            <a class="<?= $view === 'admin' && $adminTab === 'employees' ? 'active' : '' ?>" href="?view=admin&admin_tab=employees">Mitarbeiter</a>
+        </nav>
+    </div>
     <?php endif; ?>
 
 <?php if ($message): ?>
