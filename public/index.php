@@ -395,7 +395,6 @@ $message = flash();
                         <input type="hidden" name="action" value="<?= $item['type'] === 'product' ? 'product.stock.update' : 'ingredient.stock.update' ?>">
                         <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
                         <input type="number" <?= $item['type'] === 'ingredient' ? 'step="0.01"' : '' ?> name="stock_qty" value="<?= $item['type'] === 'ingredient' ? htmlspecialchars((string)$item['stock_qty']) : (int)$item['stock_qty'] ?>">
-                        <button>Speichern</button>
                     </form>
                 </td>
             </tr>
