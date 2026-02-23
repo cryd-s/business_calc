@@ -369,7 +369,8 @@ try {
         if ($action === 'shopping.complete') {
             $list = shoppingList();
             sendShoppingListWebhook($list, companyName(), currentUser());
-            completeShoppingListAndUpdateInventory();
+            $completedByDiscordId = trim((string)(currentUser()['discord_id'] ?? ''));
+            completeShoppingListAndUpdateInventory($completedByDiscordId);
             flash('Einkaufsliste abgeschlossen, an Discord gesendet und Lagerbestände aktualisiert.');
             header('Location: ?view=shopping');
             exit;
@@ -485,6 +486,7 @@ usort($inventoryItems, static function (array $a, array $b): int {
     return strcasecmp($a['name'], $b['name']);
 });
 $shoppingList = $loggedIn ? shoppingList() : ['items' => [], 'total' => 0];
+$shoppingStats = $loggedIn ? shoppingStats() : [];
 $companyName = companyName();
 $discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
 $productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
@@ -662,6 +664,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
+        <a class="<?= $view === 'stats' ? 'active' : '' ?>" href="?view=stats">Statistik</a>
     </nav>
     <?php endif; ?>
 
@@ -996,6 +999,29 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options'];
         <input type="hidden" name="action" value="shopping.complete">
         <button type="submit">Einkaufsliste abschließen</button>
     </form>
+</section>
+<?php elseif ($view === 'stats'): ?>
+<section>
+    <h2>Statistik</h2>
+    <p>Auswertung der abgeschlossenen Einkaufslisten: meistgekaufte Artikel oben, inklusive geschätztem Tagesverbrauch.</p>
+    <table>
+        <thead><tr><th>Artikel</th><th>Typ</th><th>Gesamt gekauft</th><th>Tagesverbrauch</th><th>Einkäufe</th><th>Gesamtkosten</th></tr></thead>
+        <tbody>
+        <?php foreach ($shoppingStats as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string)$row['item_name']) ?></td>
+                <td><?= htmlspecialchars((string)$row['item_type']) ?></td>
+                <td><?= number_format((float)$row['total_qty'], 0, ',', '.') ?> Stk</td>
+                <td><?= number_format((float)$row['avg_per_day'], 2, ',', '.') ?> / Tag</td>
+                <td><?= (int)$row['shopping_runs'] ?></td>
+                <td><?= number_format((float)$row['total_cost'], 0, ',', '.') ?> $</td>
+            </tr>
+        <?php endforeach; ?>
+        <?php if (count($shoppingStats) === 0): ?>
+            <tr><td colspan="6">Noch keine abgeschlossenen Einkaufslisten vorhanden.</td></tr>
+        <?php endif; ?>
+        </tbody>
+    </table>
 </section>
 <?php else: ?>
 <section>

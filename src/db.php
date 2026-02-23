@@ -133,6 +133,7 @@ SQL;
     ensureIngredientSchema($pdo, $driver);
     ensureAppSettingsSchema($pdo, $driver);
     ensureUserAccessSchema($pdo, $driver);
+    ensureShoppingHistorySchema($pdo, $driver);
 }
 
 function ensureIngredientSchema(PDO $pdo, string $driver): void
@@ -224,6 +225,54 @@ SQL);
         ':discord_id' => discordAdminId(),
         ':display_name' => adminDisplayName(),
     ]);
+}
+
+function ensureShoppingHistorySchema(PDO $pdo, string $driver): void
+{
+    if ($driver === 'sqlite') {
+        $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS shopping_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    completed_by_discord_id VARCHAR(32) DEFAULT '',
+    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS shopping_history_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shopping_history_id INTEGER NOT NULL,
+    item_type VARCHAR(40) NOT NULL,
+    item_name VARCHAR(120) NOT NULL,
+    qty DECIMAL(10,2) NOT NULL,
+    unit VARCHAR(20) NOT NULL DEFAULT 'Stk',
+    total_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY (shopping_history_id) REFERENCES shopping_history(id) ON DELETE CASCADE
+);
+SQL);
+    } else {
+        $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS shopping_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    completed_by_discord_id VARCHAR(32) NOT NULL DEFAULT '',
+    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS shopping_history_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    shopping_history_id INT NOT NULL,
+    item_type VARCHAR(40) NOT NULL,
+    item_name VARCHAR(120) NOT NULL,
+    qty DECIMAL(10,2) NOT NULL,
+    unit VARCHAR(20) NOT NULL DEFAULT 'Stk',
+    total_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+    CONSTRAINT fk_shopping_history_item_history FOREIGN KEY (shopping_history_id) REFERENCES shopping_history(id) ON DELETE CASCADE
+);
+SQL);
+    }
+
+    $historyColumns = tableColumns($pdo, 'shopping_history', $driver);
+    if (!isset($historyColumns['completed_by_discord_id'])) {
+        $pdo->exec("ALTER TABLE shopping_history ADD COLUMN completed_by_discord_id VARCHAR(32) NOT NULL DEFAULT ''");
+    }
 }
 
 function tableColumns(PDO $pdo, string $table, string $driver): array
