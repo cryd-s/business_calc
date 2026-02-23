@@ -136,15 +136,22 @@ $message = flash();
             --danger: #ec5750;
         }
         * { box-sizing: border-box; }
+        html, body {
+            min-height: 100%;
+        }
         body {
             margin: 0;
             padding: 24px;
+            min-height: 100vh;
             font-family: Inter, Segoe UI, Arial, sans-serif;
             color: var(--text);
             background:
                 radial-gradient(circle at 10% 0%, rgba(30, 217, 210, 0.2), transparent 35%),
                 radial-gradient(circle at 70% -10%, rgba(60, 105, 255, 0.18), transparent 30%),
                 var(--bg);
+            background-repeat: no-repeat;
+            background-size: cover;
+            background-attachment: fixed;
         }
         h1 { margin: 0; font-size: 1.6rem; }
         h2, h3 { color: #f2f6ff; margin-top: 0; }
