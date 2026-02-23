@@ -161,13 +161,6 @@ $message = flash();
             border: 1px solid var(--panel-border);
             box-shadow: 0 0 0 1px rgba(9, 25, 53, 0.45), 0 16px 30px rgba(0, 0, 0, 0.45);
         }
-        .top-bar.dashboard-view {
-            background: transparent;
-            border: none;
-            box-shadow: none;
-            padding-left: 0;
-            padding-right: 0;
-        }
         .pill-nav {
             margin-top: 16px;
             display: inline-flex;
@@ -196,6 +189,9 @@ $message = flash();
             grid-template-columns: 1.5fr 1fr;
             gap: 18px;
             margin-top: 18px;
+        }
+        .content-grid.shopping-view {
+            grid-template-columns: 1fr;
         }
         section {
             background: linear-gradient(140deg, rgba(7, 12, 25, 0.94), rgba(5, 8, 19, 0.94));
@@ -258,7 +254,7 @@ $message = flash();
 </head>
 <body>
 <div class="app-shell">
-    <header class="top-bar <?= $view === 'dashboard' ? 'dashboard-view' : '' ?>">
+    <header class="top-bar">
         <h1><?= htmlspecialchars(trim(($companyName !== '' ? $companyName . ' ' : '') . 'Business Verwaltung & Einkaufsliste')) ?></h1>
     </header>
 
@@ -275,7 +271,7 @@ $message = flash();
     <p class="flash"><?= htmlspecialchars($message) ?></p>
 <?php endif; ?>
 
-<div class="content-grid">
+<div class="content-grid <?= $view === 'shopping' ? 'shopping-view' : '' ?>">
     <div>
 
 <?php if ($view === 'ingredients'): ?>
@@ -481,31 +477,6 @@ $message = flash();
     </form>
 </section>
 <?php elseif ($view === 'shopping'): ?>
-<?php else: ?>
-<section>
-    <h2>Dashboard</h2>
-    <p>Lege zuerst Zutaten und Gerichte an. Hinterlege Ziel- und Ist-Bestand.</p>
-    <ul>
-        <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
-        <li>Anzahl Gerichte: <?= count($products) ?></li>
-    </ul>
-</section>
-<?php endif; ?>
-    </div>
-
-    <div>
-<?php if ($view !== 'shopping'): ?>
-        <section>
-            <h2>Live Überblick</h2>
-            <ul>
-                <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
-                <li>Anzahl Gerichte: <?= count($products) ?></li>
-                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</li>
-            </ul>
-        </section>
-<?php endif; ?>
-
-<?php if ($view === 'shopping'): ?>
 <section>
     <h2>Einkaufsliste (automatisch)</h2>
     <p>Alle benötigten Einkäufe in einer Liste. Die Reihenfolge kannst du per Drag &amp; Drop anpassen.</p>
@@ -525,8 +496,30 @@ $message = flash();
     </table>
     <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</strong></p>
 </section>
+<?php else: ?>
+<section>
+    <h2>Dashboard</h2>
+    <p>Lege zuerst Zutaten und Gerichte an. Hinterlege Ziel- und Ist-Bestand.</p>
+    <ul>
+        <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
+        <li>Anzahl Gerichte: <?= count($products) ?></li>
+    </ul>
+</section>
 <?php endif; ?>
     </div>
+
+<?php if ($view !== 'shopping'): ?>
+    <div>
+        <section>
+            <h2>Live Überblick</h2>
+            <ul>
+                <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
+                <li>Anzahl Gerichte: <?= count($products) ?></li>
+                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</li>
+            </ul>
+        </section>
+    </div>
+<?php endif; ?>
 </div>
 </div>
 <script>
