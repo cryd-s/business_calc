@@ -155,7 +155,7 @@ function sendShoppingListWebhook(array $shoppingList, string $companyName, ?arra
 
     $lines = [];
     foreach ($shoppingList['items'] as $row) {
-        $qty = number_format((float)$row['qty'], 2, ',', '.');
+        $qty = number_format((float)$row['qty'], 0, ',', '.');
         $lines[] = sprintf('- %s: %s', (string)$row['name'], $qty);
     }
 
@@ -174,7 +174,7 @@ function sendShoppingListWebhook(array $shoppingList, string $companyName, ?arra
             'fields' => [
                 [
                     'name' => 'Gesamtkosten',
-                    'value' => number_format((float)$shoppingList['total'], 2, ',', '.') . ' $',
+                    'value' => number_format((float)$shoppingList['total'], 0, ',', '.') . ' $',
                     'inline' => true,
                 ],
                 [
@@ -535,9 +535,20 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         .admin-nav-wrapper {
             margin-top: 10px;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             flex-wrap: wrap;
             gap: 10px;
+        }
+        .admin-nav-wrapper details {
+            width: 100%;
+        }
+        .admin-nav-wrapper summary {
+            list-style: none;
+            cursor: pointer;
+            width: fit-content;
+        }
+        .admin-nav-wrapper summary::-webkit-details-marker {
+            display: none;
         }
         .admin-nav-label {
             color: var(--muted);
@@ -634,9 +645,6 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <?php if ($loggedIn): ?>
             <div style="display:flex; align-items:center; gap:10px;">
                 <small>Angemeldet als <?= htmlspecialchars((string)($user['display_name'] ?? $user['discord_id'] ?? '')) ?></small>
-                <?php if (isAdminUser($user)): ?>
-                    <a href="?view=admin&admin_tab=employees"><button type="button">Admin-Menü</button></a>
-                <?php endif; ?>
                 <form method="post" style="margin:0;">
                     <input type="hidden" name="action" value="auth.logout">
                     <button type="submit">Logout</button>
@@ -655,13 +663,15 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
 
     <?php if ($loggedIn && isAdminUser($user)): ?>
     <div class="admin-nav-wrapper">
-        <span class="admin-nav-label">Admin-Menü</span>
-        <nav class="pill-nav" style="margin-top:0;">
-            <a class="<?= ($view === 'ingredients') || ($view === 'admin' && $adminTab === 'ingredients') ? 'active' : '' ?>" href="?view=admin&admin_tab=ingredients">Zutaten</a>
-            <a class="<?= ($view === 'products') || ($view === 'admin' && $adminTab === 'products') ? 'active' : '' ?>" href="?view=admin&admin_tab=products">Rezepte</a>
-            <a class="<?= ($view === 'options') || ($view === 'admin' && $adminTab === 'options') ? 'active' : '' ?>" href="?view=admin&admin_tab=options">Optionen</a>
-            <a class="<?= $view === 'admin' && $adminTab === 'employees' ? 'active' : '' ?>" href="?view=admin&admin_tab=employees">Mitarbeiter</a>
-        </nav>
+        <details>
+            <summary><button type="button">Admin-Menü</button></summary>
+            <nav class="pill-nav" style="margin-top:8px;">
+                <a class="<?= ($view === 'ingredients') || ($view === 'admin' && $adminTab === 'ingredients') ? 'active' : '' ?>" href="?view=admin&admin_tab=ingredients">Zutaten</a>
+                <a class="<?= ($view === 'products') || ($view === 'admin' && $adminTab === 'products') ? 'active' : '' ?>" href="?view=admin&admin_tab=products">Rezepte</a>
+                <a class="<?= ($view === 'options') || ($view === 'admin' && $adminTab === 'options') ? 'active' : '' ?>" href="?view=admin&admin_tab=options">Optionen</a>
+                <a class="<?= $view === 'admin' && $adminTab === 'employees' ? 'active' : '' ?>" href="?view=admin&admin_tab=employees">Mitarbeiter</a>
+            </nav>
+        </details>
     </div>
     <?php endif; ?>
 
@@ -738,8 +748,8 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
     <form method="post" class="grid">
         <input type="hidden" name="action" value="ingredient.create">
         <div><label>Name<input required name="name"></label></div>
-        <div><label>Preis pro Stück<input required step="0.01" type="number" name="price_per_unit"></label></div>
-        <div><label>Lagerbestand<input step="0.01" type="number" name="stock_qty" value="0"></label></div>
+        <div><label>Preis pro Stück<input required step="1" type="number" name="price_per_unit"></label></div>
+        <div><label>Lagerbestand<input step="1" type="number" name="stock_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
@@ -757,8 +767,8 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                         <small class="autosave-note" aria-live="polite"></small>
                     </form>
                 </td>
-                <td><input form="<?= $formId ?>" type="number" step="0.01" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
-                <td><input form="<?= $formId ?>" type="number" step="0.01" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
+                <td><input form="<?= $formId ?>" type="number" step="1" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
+                <td><input form="<?= $formId ?>" type="number" step="1" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
                 <td>
                     <form method="post" style="display:inline">
                         <input type="hidden" name="action" value="ingredient.delete">
@@ -780,7 +790,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <input type="hidden" name="action" value="product.create">
         <input type="hidden" name="product_type" value="direct">
         <div><label>Name<input required name="name"></label></div>
-        <div><label>Preis pro Stück<input required step="0.01" type="number" name="direct_purchase_price" value="0"></label></div>
+        <div><label>Preis pro Stück<input required step="1" type="number" name="direct_purchase_price" value="0"></label></div>
         <div><label>Zielbestand<input type="number" name="target_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
@@ -802,7 +812,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                     </form>
                 </td>
                 <td><input form="<?= $formId ?>" type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
-                <td><input form="<?= $formId ?>" type="number" step="0.01" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>"></td>
+                <td><input form="<?= $formId ?>" type="number" step="1" name="direct_purchase_price" value="<?= htmlspecialchars((string)$product['direct_purchase_price']) ?>"></td>
                 <td>
                     <form method="post" style="display:inline">
                         <input type="hidden" name="action" value="product.delete">
@@ -845,7 +855,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                     </form>
                 </td>
                 <td><input form="<?= $formId ?>" type="number" name="target_qty" value="<?= (int)$product['target_qty'] ?>"></td>
-                <td><?= number_format((float)$product['calculated_recipe_price'], 2, ',', '.') ?> $</td>
+                <td><?= number_format((float)$product['calculated_recipe_price'], 0, ',', '.') ?> $</td>
                 <td><a href="?view=recipe&product_id=<?= (int)$product['id'] ?>">Bearbeiten (<?= (int)$product['ingredient_count'] ?>)</a></td>
                 <td>
                     <form method="post" style="display:inline">
@@ -875,7 +885,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                     <form method="post" class="autosave-form">
                         <input type="hidden" name="action" value="<?= $item['type'] === 'product' ? 'product.stock.update' : 'ingredient.stock.update' ?>">
                         <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
-                        <input type="number" <?= $item['type'] === 'ingredient' ? 'step="0.01"' : '' ?> name="stock_qty" value="<?= $item['type'] === 'ingredient' ? htmlspecialchars((string)$item['stock_qty']) : (int)$item['stock_qty'] ?>">
+                        <input type="number" step="1" name="stock_qty" value="<?= $item['type'] === 'ingredient' ? htmlspecialchars((string)$item['stock_qty']) : (int)$item['stock_qty'] ?>">
                         <small class="autosave-note" aria-live="polite"></small>
                     </form>
                 </td>
@@ -899,7 +909,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                 <?php endforeach; ?>
             </select>
         </label></div>
-        <div><label>Stück pro Gericht<input required type="number" step="0.01" name="qty_per_product"></label></div>
+        <div><label>Stück pro Gericht<input required type="number" step="1" name="qty_per_product"></label></div>
         <div><button>Speichern</button></div>
     </form>
 
@@ -909,8 +919,8 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <?php foreach ($recipeItems as $item): ?>
             <tr>
                 <td><?= htmlspecialchars($item['ingredient_name']) ?></td>
-                <td><?= number_format((float)$item['qty_per_product'], 2, ',', '.') ?></td>
-                <td><?= number_format((float)$item['qty_per_product'] * (float)$item['price_per_unit'], 2, ',', '.') ?> $</td>
+                <td><?= number_format((float)$item['qty_per_product'], 0, ',', '.') ?></td>
+                <td><?= number_format((float)$item['qty_per_product'] * (float)$item['price_per_unit'], 0, ',', '.') ?> $</td>
                 <td>
                     <form method="post">
                         <input type="hidden" name="action" value="recipe.delete">
@@ -958,7 +968,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
         <?php endif; ?>
         </tbody>
     </table>
-    <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</strong></p>
+    <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 0, ',', '.') ?> $</strong></p>
     <form method="post" style="margin-top: 12px;">
         <input type="hidden" name="action" value="shopping.complete">
         <button type="submit">Einkaufsliste abschließen</button>
@@ -989,7 +999,7 @@ if (!in_array($adminTab, $allowedAdminTabs, true)) {
                     <li>Anzahl Zutaten: <?= count($ingredients) ?></li>
                     <li>Anzahl Gerichte: <?= count($products) ?></li>
                 <?php endif; ?>
-                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 2, ',', '.') ?> $</li>
+                <li>Gesamter Bedarf: <?= number_format((float)$shoppingList['total'], 0, ',', '.') ?> $</li>
             </ul>
         </section>
     </div>
