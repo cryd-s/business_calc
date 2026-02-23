@@ -480,6 +480,7 @@ $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['
 $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
 $discordLoginUrl = discordAuthUrl();
 $message = flash();
+$isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['employees', 'ingredients', 'products', 'recipe', 'options'], true);
 
 
 ?>
@@ -522,6 +523,7 @@ $message = flash();
         h2, h3 { color: #f2f6ff; margin-top: 0; }
         p, li, label { color: var(--muted); }
         .app-shell { max-width: 1500px; margin: 0 auto; }
+        .app-shell.app-shell-wide { max-width: 100%; }
         .top-bar {
             display: flex;
             justify-content: space-between;
@@ -625,7 +627,7 @@ $message = flash();
     </style>
 </head>
 <body>
-<div class="app-shell">
+<div class="app-shell<?= $isAdminWorkspaceView ? ' app-shell-wide' : '' ?>">
     <header class="top-bar">
         <h1><?= htmlspecialchars(trim($companyName)) ?></h1>
         <?php if ($loggedIn): ?>
@@ -655,7 +657,7 @@ $message = flash();
     <p class="flash"><?= htmlspecialchars($message) ?></p>
 <?php endif; ?>
 
-<div class="content-grid <?= in_array($view, ['shopping', 'login'], true) ? 'shopping-view' : '' ?>">
+<div class="content-grid <?= in_array($view, ['shopping', 'login'], true) || $isAdminWorkspaceView ? 'shopping-view' : '' ?>">
     <div>
 
 <?php if ($view === 'login'): ?>
@@ -747,12 +749,11 @@ $message = flash();
         <input type="hidden" name="action" value="ingredient.create">
         <div><label>Name<input required name="name"></label></div>
         <div><label>Preis pro Stück<input required step="1" type="number" name="price_per_unit"></label></div>
-        <div><label>Lagerbestand<input step="1" type="number" name="stock_qty" value="0"></label></div>
         <div><button type="submit">Anlegen</button></div>
     </form>
 
     <table>
-        <thead><tr><th>Name</th><th>Preis pro Stück</th><th>Lagerbestand</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>Name</th><th>Preis pro Stück</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($ingredients as $ingredient): ?>
             <?php $formId = 'ingredient-' . (int)$ingredient['id']; ?>
@@ -761,12 +762,12 @@ $message = flash();
                     <form method="post" class="autosave-form" id="<?= $formId ?>">
                     <input type="hidden" name="action" value="ingredient.update">
                     <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
+                    <input type="hidden" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>">
                         <input form="<?= $formId ?>" name="name" value="<?= htmlspecialchars($ingredient['name']) ?>">
                         <small class="autosave-note" aria-live="polite"></small>
                     </form>
                 </td>
                 <td><input form="<?= $formId ?>" type="number" step="1" name="price_per_unit" value="<?= htmlspecialchars((string)$ingredient['price_per_unit']) ?>"></td>
-                <td><input form="<?= $formId ?>" type="number" step="1" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>"></td>
                 <td>
                     <form method="post" style="display:inline">
                         <input type="hidden" name="action" value="ingredient.delete">
