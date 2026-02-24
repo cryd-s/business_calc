@@ -201,6 +201,61 @@ function sendShoppingListWebhook(array $shoppingList, string $companyName, ?arra
     postJson($webhookUrl, $payload);
 }
 
+function sendSpecialPurchaseWebhook(array $purchase, string $companyName, ?array $user): void
+{
+    $webhookUrl = discordWebhookUrl();
+    if ($webhookUrl === '') {
+        throw new RuntimeException('Bitte zuerst eine Discord Webhook-URL unter Optionen hinterlegen.');
+    }
+
+    $lines = [];
+    foreach ($purchase['items'] as $row) {
+        $qty = number_format((float)$row['qty'], 0, ',', '.');
+        $lines[] = sprintf('- %s (%s): %s', (string)$row['name'], (string)$row['type'], $qty);
+    }
+
+    if ($lines === []) {
+        $lines[] = 'Kein Sondereinkauf ausgewählt.';
+    }
+
+    $completedBy = 'Unbekannt';
+    $userDiscordId = trim((string)($user['discord_id'] ?? ''));
+    if ($userDiscordId !== '') {
+        $dbUser = findUserByDiscordId($userDiscordId);
+        if (is_array($dbUser)) {
+            $completedBy = trim((string)($dbUser['display_name'] ?? ''));
+        }
+    }
+
+    if ($completedBy === '') {
+        $completedBy = trim((string)($user['display_name'] ?? 'Unbekannt'));
+    }
+    $titlePrefix = trim($companyName) !== '' ? $companyName . ' · ' : '';
+
+    $payload = [
+        'embeds' => [[
+            'title' => $titlePrefix . 'Sondereinkauf abgeschlossen',
+            'description' => implode("\n", $lines),
+            'color' => 5793266,
+            'fields' => [
+                [
+                    'name' => 'Gesamtkosten',
+                    'value' => number_format((float)$purchase['total'], 0, ',', '.') . ' $',
+                    'inline' => true,
+                ],
+                [
+                    'name' => 'Abgeschlossen von',
+                    'value' => $completedBy !== '' ? $completedBy : 'Unbekannt',
+                    'inline' => true,
+                ],
+            ],
+            'timestamp' => gmdate('c'),
+        ]],
+    ];
+
+    postJson($webhookUrl, $payload);
+}
+
 $view = $_GET['view'] ?? 'dashboard';
 if (isset($_GET['code']) || isset($_GET['error'])) {
     $view = 'oauth-callback';
@@ -441,6 +496,14 @@ try {
             header('Location: ?view=shopping');
             exit;
         }
+        if ($action === 'special-purchase.complete') {
+            $completedByDiscordId = trim((string)(currentUser()['discord_id'] ?? ''));
+            $purchase = completeSpecialPurchase($_POST['special_qty'] ?? [], $completedByDiscordId);
+            sendSpecialPurchaseWebhook($purchase, companyName(), currentUser());
+            flash('Sondereinkauf abgeschlossen, an Discord gesendet und Statistik aktualisiert.');
+            header('Location: ?view=special-purchase');
+            exit;
+        }
     }
 
     if ($view === 'oauth-callback') {
@@ -552,6 +615,7 @@ usort($inventoryItems, static function (array $a, array $b): int {
     return strcasecmp($a['name'], $b['name']);
 });
 $shoppingList = $loggedIn ? shoppingList() : ['items' => [], 'total' => 0];
+$specialPurchaseCatalog = $loggedIn ? specialPurchaseCatalog() : [];
 $shoppingStats = $loggedIn ? shoppingStats() : [];
 $companyName = companyName();
 $discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
@@ -731,6 +795,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
         <a class="<?= $view === 'dashboard' ? 'active' : '' ?>" href="?view=dashboard">Dashboard</a>
         <a class="<?= $view === 'inventory' ? 'active' : '' ?>" href="?view=inventory">Lager</a>
         <a class="<?= $view === 'shopping' ? 'active' : '' ?>" href="?view=shopping">Einkaufsliste</a>
+        <a class="<?= $view === 'special-purchase' ? 'active' : '' ?>" href="?view=special-purchase">Sondereinkauf</a>
         <a class="<?= $view === 'stats' ? 'active' : '' ?>" href="?view=stats">Statistik</a>
     </nav>
     <?php endif; ?>
@@ -1101,6 +1166,39 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
     <form method="post" style="margin-top: 12px;">
         <input type="hidden" name="action" value="shopping.complete">
         <button type="submit">Einkaufsliste abschließen</button>
+    </form>
+</section>
+<?php elseif ($view === 'special-purchase'): ?>
+<section>
+    <h2>Sondereinkauf</h2>
+    <p>Hier kannst du manuell Einkäufe buchen. Diese werden im Lager, in der Statistik und per Discord-Webhook berücksichtigt.</p>
+    <form method="post" style="margin-top: 12px;">
+        <input type="hidden" name="action" value="special-purchase.complete">
+        <table>
+            <thead><tr><th>Artikel</th><th>Typ</th><th>Preis pro Stück</th><th>Menge</th></tr></thead>
+            <tbody>
+            <?php foreach ($specialPurchaseCatalog as $item): ?>
+                <tr>
+                    <td><?= htmlspecialchars((string)$item['item_name']) ?></td>
+                    <td><?= htmlspecialchars((string)$item['item_type']) ?></td>
+                    <td><?= number_format((float)$item['unit_price'], 0, ',', '.') ?> $</td>
+                    <td>
+                        <input
+                            type="number"
+                            name="special_qty[<?= htmlspecialchars((string)$item['key']) ?>]"
+                            min="0"
+                            step="1"
+                            value="0"
+                        >
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            <?php if (count($specialPurchaseCatalog) === 0): ?>
+                <tr><td colspan="4">Keine Artikel vorhanden. Bitte zuerst Zutaten oder Gerichte anlegen.</td></tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
+        <button type="submit" style="margin-top: 12px;">Sondereinkauf abschließen</button>
     </form>
 </section>
 <?php elseif ($view === 'stats'): ?>

@@ -512,6 +512,135 @@ function shoppingList(): array
     ];
 }
 
+function specialPurchaseCatalog(): array
+{
+    $catalog = [];
+
+    foreach (allIngredients() as $ingredient) {
+        $catalog[] = [
+            'key' => 'ingredient:' . (int)$ingredient['id'],
+            'item_type' => 'Zutat',
+            'item_name' => (string)$ingredient['name'],
+            'item_id' => (int)$ingredient['id'],
+            'unit_price' => (float)$ingredient['price_per_unit'],
+            'target_table' => 'ingredients',
+        ];
+    }
+
+    foreach (allProducts() as $product) {
+        $unitPrice = (int)$product['is_direct_purchase'] === 1
+            ? (float)$product['direct_purchase_price']
+            : (float)$product['calculated_recipe_price'];
+        $catalog[] = [
+            'key' => 'product:' . (int)$product['id'],
+            'item_type' => 'Gericht',
+            'item_name' => (string)$product['name'],
+            'item_id' => (int)$product['id'],
+            'unit_price' => $unitPrice,
+            'target_table' => 'products',
+        ];
+    }
+
+    usort($catalog, static function (array $a, array $b): int {
+        $typeCompare = strcasecmp((string)$a['item_type'], (string)$b['item_type']);
+        if ($typeCompare !== 0) {
+            return $typeCompare;
+        }
+
+        return strcasecmp((string)$a['item_name'], (string)$b['item_name']);
+    });
+
+    return $catalog;
+}
+
+function completeSpecialPurchase(array $selectedItems, string $completedByDiscordId = ''): array
+{
+    $catalog = specialPurchaseCatalog();
+    $catalogByKey = [];
+    foreach ($catalog as $item) {
+        $catalogByKey[(string)$item['key']] = $item;
+    }
+
+    $purchaseItems = [];
+    foreach ($selectedItems as $key => $qtyRaw) {
+        $key = trim((string)$key);
+        if ($key === '' || !isset($catalogByKey[$key])) {
+            continue;
+        }
+
+        $qty = (float)$qtyRaw;
+        if ($qty <= 0) {
+            continue;
+        }
+
+        $catalogItem = $catalogByKey[$key];
+        $purchaseItems[] = [
+            'item_type' => (string)$catalogItem['item_type'],
+            'item_name' => (string)$catalogItem['item_name'],
+            'qty' => $qty,
+            'unit' => 'Stk',
+            'sum' => $qty * (float)$catalogItem['unit_price'],
+            'item_id' => (int)$catalogItem['item_id'],
+            'target_table' => (string)$catalogItem['target_table'],
+        ];
+    }
+
+    if ($purchaseItems === []) {
+        throw new InvalidArgumentException('Bitte mindestens einen Artikel mit Menge größer als 0 auswählen.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $actorDiscordId = trim($completedByDiscordId);
+        $historyStmt = $pdo->prepare('INSERT INTO shopping_history (completed_by_discord_id) VALUES (:completed_by_discord_id)');
+        $historyStmt->execute([':completed_by_discord_id' => $actorDiscordId]);
+        $shoppingHistoryId = (int)$pdo->lastInsertId();
+
+        $historyItemStmt = $pdo->prepare('INSERT INTO shopping_history_items (shopping_history_id, item_type, item_name, qty, unit, total_cost) VALUES (:shopping_history_id, :item_type, :item_name, :qty, :unit, :total_cost)');
+
+        foreach ($purchaseItems as $item) {
+            $historyItemStmt->execute([
+                ':shopping_history_id' => $shoppingHistoryId,
+                ':item_type' => $item['item_type'],
+                ':item_name' => $item['item_name'],
+                ':qty' => $item['qty'],
+                ':unit' => $item['unit'],
+                ':total_cost' => $item['sum'],
+            ]);
+
+            $targetTable = $item['target_table'] === 'ingredients' ? 'ingredients' : 'products';
+            $qty = $targetTable === 'products' ? (int)round((float)$item['qty']) : (float)$item['qty'];
+            $stmt = $pdo->prepare("UPDATE {$targetTable} SET stock_qty = stock_qty + :qty WHERE id = :id");
+            $stmt->execute([
+                ':qty' => $qty,
+                ':id' => (int)$item['item_id'],
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        throw $e;
+    }
+
+    return [
+        'items' => array_map(static function (array $item): array {
+            return [
+                'type' => $item['item_type'],
+                'name' => $item['item_name'],
+                'qty' => $item['qty'],
+                'unit' => $item['unit'],
+                'sum' => $item['sum'],
+            ];
+        }, $purchaseItems),
+        'total' => array_sum(array_column($purchaseItems, 'sum')),
+    ];
+}
+
 function completeShoppingListAndUpdateInventory(string $completedByDiscordId = ''): void
 {
     $shoppingListSnapshot = shoppingList();
