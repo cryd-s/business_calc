@@ -224,7 +224,7 @@ function sendShoppingListWebhook(array $shoppingList, string $companyName, ?arra
     postJson($webhookUrl, $payload);
 }
 
-function sendSpecialPurchaseWebhook(array $purchase, string $companyName, ?array $user): void
+function sendSpecialPurchaseWebhook(array $purchase, string $companyName, ?array $user, ?float $cashStart = null, ?float $cashEnd = null): void
 {
     $webhookUrl = discordWebhookUrl();
     if ($webhookUrl === '') {
@@ -275,6 +275,19 @@ function sendSpecialPurchaseWebhook(array $purchase, string $companyName, ?array
             'timestamp' => gmdate('c'),
         ]],
     ];
+
+    if ($cashStart !== null || $cashEnd !== null) {
+        $payload['embeds'][0]['fields'][] = [
+            'name' => 'Kassen-Anfangsbestand',
+            'value' => $cashStart !== null ? number_format($cashStart, 2, ',', '.') . ' $' : 'Nicht angegeben',
+            'inline' => true,
+        ];
+        $payload['embeds'][0]['fields'][] = [
+            'name' => 'Kassen-Endbestand',
+            'value' => $cashEnd !== null ? number_format($cashEnd, 2, ',', '.') . ' $' : 'Nicht angegeben',
+            'inline' => true,
+        ];
+    }
 
     postJson($webhookUrl, $payload);
 }
@@ -531,9 +544,11 @@ try {
             exit;
         }
         if ($action === 'special-purchase.complete') {
+            $cashStart = parseCashAmount((string)($_POST['cash_start'] ?? ''));
+            $cashEnd = parseCashAmount((string)($_POST['cash_end'] ?? ''));
             $completedByDiscordId = trim((string)(currentUser()['discord_id'] ?? ''));
             $purchase = completeSpecialPurchase($_POST['special_qty'] ?? [], $completedByDiscordId);
-            sendSpecialPurchaseWebhook($purchase, companyName(), currentUser());
+            sendSpecialPurchaseWebhook($purchase, companyName(), currentUser(), $cashStart, $cashEnd);
             flash('Sondereinkauf abgeschlossen, an Discord gesendet und Statistik aktualisiert.');
             header('Location: ?view=special-purchase');
             exit;
@@ -1213,18 +1228,8 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
             </tbody>
         </table>
         <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 0, ',', '.') ?> $</strong></p>
-        <form method="post" style="margin-top: 12px;">
+        <form method="post" id="shopping-complete-form" style="margin-top: 12px;">
             <input type="hidden" name="action" value="shopping.complete">
-            <?php if ($shoppingCashCheckEnabled): ?>
-                <div class="grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
-                    <label>Kassen-Anfangsbestand
-                        <input type="number" name="cash_start" step="0.01" min="0" value="<?= htmlspecialchars($cashStartInput) ?>" placeholder="0,00">
-                    </label>
-                    <label>Kassen-Endbestand
-                        <input type="number" name="cash_end" step="0.01" min="0" value="<?= htmlspecialchars($cashEndInput) ?>" placeholder="0,00">
-                    </label>
-                </div>
-            <?php endif; ?>
             <button type="submit">Einkaufsliste abschließen</button>
         </form>
     </section>
@@ -1232,43 +1237,70 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
     <?php if ($shoppingCashCheckEnabled): ?>
     <section>
         <h3>Kassenprüfung</h3>
-        <p>Die Kassenbestände werden beim Abschließen der Einkaufsliste an Discord übermittelt (Dokumentation).</p>
+        <div class="grid" style="grid-template-columns: 1fr; gap: 10px; margin-bottom: 10px;">
+            <label>Kassen-Anfangsbestand
+                <input form="shopping-complete-form" type="number" name="cash_start" step="0.01" min="0" value="<?= htmlspecialchars($cashStartInput) ?>" placeholder="0,00">
+            </label>
+            <label>Kassen-Endbestand
+                <input form="shopping-complete-form" type="number" name="cash_end" step="0.01" min="0" value="<?= htmlspecialchars($cashEndInput) ?>" placeholder="0,00">
+            </label>
+        </div>
     </section>
     <?php endif; ?>
 </div>
 <?php elseif ($view === 'special-purchase'): ?>
-<section>
-    <h2>Sondereinkauf</h2>
-    <p>Hier kannst du manuell Einkäufe buchen. Diese werden im Lager, in der Statistik und per Discord-Webhook berücksichtigt.</p>
-    <form method="post" style="margin-top: 12px;">
-        <input type="hidden" name="action" value="special-purchase.complete">
-        <table>
-            <thead><tr><th>Artikel</th><th>Typ</th><th>Preis pro Stück</th><th>Menge</th></tr></thead>
-            <tbody>
-            <?php foreach ($specialPurchaseCatalog as $item): ?>
-                <tr>
-                    <td><?= htmlspecialchars((string)$item['item_name']) ?></td>
-                    <td><?= htmlspecialchars((string)$item['item_type']) ?></td>
-                    <td><?= number_format((float)$item['unit_price'], 0, ',', '.') ?> $</td>
-                    <td>
-                        <input
-                            type="number"
-                            name="special_qty[<?= htmlspecialchars((string)$item['key']) ?>]"
-                            min="0"
-                            step="1"
-                            value="0"
-                        >
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            <?php if (count($specialPurchaseCatalog) === 0): ?>
-                <tr><td colspan="4">Keine Artikel vorhanden. Bitte zuerst Zutaten oder Gerichte anlegen.</td></tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
-        <button type="submit" style="margin-top: 12px;">Sondereinkauf abschließen</button>
-    </form>
-</section>
+<?php
+    $specialCashStartInput = trim((string)($_POST['cash_start'] ?? ''));
+    $specialCashEndInput = trim((string)($_POST['cash_end'] ?? ''));
+?>
+<div class="grid" style="grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap:16px; align-items:start;">
+    <section>
+        <h2>Sondereinkauf</h2>
+        <p>Hier kannst du manuell Einkäufe buchen. Diese werden im Lager, in der Statistik und per Discord-Webhook berücksichtigt.</p>
+        <form method="post" id="special-purchase-complete-form" style="margin-top: 12px;">
+            <input type="hidden" name="action" value="special-purchase.complete">
+            <table>
+                <thead><tr><th>Artikel</th><th>Typ</th><th>Preis pro Stück</th><th>Menge</th></tr></thead>
+                <tbody>
+                <?php foreach ($specialPurchaseCatalog as $item): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)$item['item_name']) ?></td>
+                        <td><?= htmlspecialchars((string)$item['item_type']) ?></td>
+                        <td><?= number_format((float)$item['unit_price'], 0, ',', '.') ?> $</td>
+                        <td>
+                            <input
+                                type="number"
+                                name="special_qty[<?= htmlspecialchars((string)$item['key']) ?>]"
+                                min="0"
+                                step="1"
+                                value="0"
+                            >
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (count($specialPurchaseCatalog) === 0): ?>
+                    <tr><td colspan="4">Keine Artikel vorhanden. Bitte zuerst Zutaten oder Gerichte anlegen.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
+            <button type="submit" style="margin-top: 12px;">Sondereinkauf abschließen</button>
+        </form>
+    </section>
+
+    <?php if ($shoppingCashCheckEnabled): ?>
+    <section>
+        <h3>Kassenprüfung</h3>
+        <div class="grid" style="grid-template-columns: 1fr; gap: 10px; margin-bottom: 10px;">
+            <label>Kassen-Anfangsbestand
+                <input form="special-purchase-complete-form" type="number" name="cash_start" step="0.01" min="0" value="<?= htmlspecialchars($specialCashStartInput) ?>" placeholder="0,00">
+            </label>
+            <label>Kassen-Endbestand
+                <input form="special-purchase-complete-form" type="number" name="cash_end" step="0.01" min="0" value="<?= htmlspecialchars($specialCashEndInput) ?>" placeholder="0,00">
+            </label>
+        </div>
+    </section>
+    <?php endif; ?>
+</div>
 <?php elseif ($view === 'stats'): ?>
 <section>
     <h2>Statistik</h2>
