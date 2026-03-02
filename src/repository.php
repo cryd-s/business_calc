@@ -780,9 +780,17 @@ function companyName(): string
     return $value === false ? '' : trim((string)$value);
 }
 
-function updateCompanyName(string $name): void
+function appSettingValue(string $key, string $default = ''): string
 {
-    $name = trim($name);
+    $stmt = db()->prepare('SELECT setting_value FROM app_settings WHERE setting_key = :key LIMIT 1');
+    $stmt->execute([':key' => trim($key)]);
+    $value = $stmt->fetchColumn();
+
+    return $value === false ? $default : trim((string)$value);
+}
+
+function updateAppSettingValue(string $key, string $value): void
+{
     $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
 
     if ($driver === 'sqlite') {
@@ -793,18 +801,19 @@ function updateCompanyName(string $name): void
 
     $stmt = db()->prepare($sql);
     $stmt->execute([
-        ':key' => 'company_name',
-        ':value' => $name,
+        ':key' => trim($key),
+        ':value' => trim($value),
     ]);
+}
+
+function updateCompanyName(string $name): void
+{
+    updateAppSettingValue('company_name', $name);
 }
 
 function discordWebhookUrl(): string
 {
-    $stmt = db()->prepare('SELECT setting_value FROM app_settings WHERE setting_key = :key LIMIT 1');
-    $stmt->execute([':key' => 'discord_webhook_url']);
-    $value = $stmt->fetchColumn();
-
-    return $value === false ? '' : trim((string)$value);
+    return appSettingValue('discord_webhook_url');
 }
 
 function updateDiscordWebhookUrl(string $url): void
@@ -814,17 +823,15 @@ function updateDiscordWebhookUrl(string $url): void
         throw new InvalidArgumentException('Webhook-URL ist ungültig.');
     }
 
-    $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
+    updateAppSettingValue('discord_webhook_url', $url);
+}
 
-    if ($driver === 'sqlite') {
-        $sql = 'INSERT INTO app_settings (setting_key, setting_value) VALUES (:key, :value) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value';
-    } else {
-        $sql = 'INSERT INTO app_settings (setting_key, setting_value) VALUES (:key, :value) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)';
-    }
+function isShoppingCashCheckEnabled(): bool
+{
+    return appSettingValue('shopping_cash_check_enabled', '0') === '1';
+}
 
-    $stmt = db()->prepare($sql);
-    $stmt->execute([
-        ':key' => 'discord_webhook_url',
-        ':value' => $url,
-    ]);
+function updateShoppingCashCheckEnabled(bool $enabled): void
+{
+    updateAppSettingValue('shopping_cash_check_enabled', $enabled ? '1' : '0');
 }

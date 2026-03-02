@@ -487,6 +487,15 @@ try {
             header('Location: ?view=options');
             exit;
         }
+        if ($action === 'options.shopping_cash_check.toggle') {
+            requireAdmin();
+            $enabled = (string)($_POST['shopping_cash_check_enabled'] ?? '0') === '1';
+            updateShoppingCashCheckEnabled($enabled);
+            writeAuditLog(currentUser(), 'options.shopping_cash_check.toggle', '', $enabled ? 'Kassenprüfung aktiviert' : 'Kassenprüfung deaktiviert');
+            flash($enabled ? 'Kassenprüfung aktiviert.' : 'Kassenprüfung deaktiviert.');
+            header('Location: ?view=options');
+            exit;
+        }
         if ($action === 'shopping.complete') {
             $list = shoppingList();
             sendShoppingListWebhook($list, companyName(), currentUser());
@@ -619,6 +628,7 @@ $specialPurchaseCatalog = $loggedIn ? specialPurchaseCatalog() : [];
 $shoppingStats = $loggedIn ? shoppingStats() : [];
 $companyName = companyName();
 $discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
+$shoppingCashCheckEnabled = $loggedIn ? isShoppingCashCheckEnabled() : false;
 $productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
 $adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
@@ -1111,6 +1121,16 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
         <div><label>Discord Webhook URL<input name="discord_webhook_url" value="<?= htmlspecialchars($discordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
         <div><button type="submit">Webhook speichern</button></div>
     </form>
+
+    <form method="post" style="margin-top: 12px;">
+        <input type="hidden" name="action" value="options.shopping_cash_check.toggle">
+        <label style="display:flex; align-items:center; gap:8px;">
+            <input type="hidden" name="shopping_cash_check_enabled" value="0">
+            <input type="checkbox" name="shopping_cash_check_enabled" value="1" <?= $shoppingCashCheckEnabled ? 'checked' : '' ?>>
+            Kassenprüfung neben Einkaufsliste anzeigen
+        </label>
+        <button type="submit" style="margin-top: 8px;">Kassenprüfung speichern</button>
+    </form>
 </section>
 
 <?php elseif ($view === 'auditlog' && isAdminUser($user)): ?>
@@ -1145,29 +1165,65 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 </section>
 
 <?php elseif ($view === 'shopping'): ?>
-<section>
-    <h2>Einkaufsliste (automatisch)</h2>
-    <p>Alle benötigten Einkäufe in einer Liste. Die Reihenfolge kannst du per Drag &amp; Drop anpassen.</p>
-    <table>
-        <thead><tr><th>Artikel</th><th>Menge</th></tr></thead>
-        <tbody class="shopping-list" data-sortable-key="shopping-order-v1">
-        <?php foreach ($shoppingList['items'] as $row): ?>
-            <tr draggable="true" data-sort-value="<?= htmlspecialchars($row['type'] . ':' . $row['name']) ?>">
-                <td><?= htmlspecialchars($row['name']) ?></td>
-                <td><?= number_format((float)$row['qty'], 0, ',', '.') ?></td>
-            </tr>
-        <?php endforeach; ?>
-        <?php if (count($shoppingList['items']) === 0): ?>
-            <tr><td colspan="2">Kein Einkaufsbedarf.</td></tr>
+<?php
+    $cashStartInput = trim((string)($_POST['cash_start'] ?? ''));
+    $cashEndInput = trim((string)($_POST['cash_end'] ?? ''));
+    $cashStart = is_numeric(str_replace(',', '.', $cashStartInput)) ? (float)str_replace(',', '.', $cashStartInput) : 0.0;
+    $cashEnd = is_numeric(str_replace(',', '.', $cashEndInput)) ? (float)str_replace(',', '.', $cashEndInput) : 0.0;
+    $expectedCashEnd = $cashStart - (float)$shoppingList['total'];
+    $cashDifference = $cashEnd - $expectedCashEnd;
+    $hasCashDifference = abs($cashDifference) > 0.009;
+?>
+<div class="grid" style="grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap:16px; align-items:start;">
+    <section>
+        <h2>Einkaufsliste (automatisch)</h2>
+        <p>Alle benötigten Einkäufe in einer Liste. Die Reihenfolge kannst du per Drag &amp; Drop anpassen.</p>
+        <table>
+            <thead><tr><th>Artikel</th><th>Menge</th></tr></thead>
+            <tbody class="shopping-list" data-sortable-key="shopping-order-v1">
+            <?php foreach ($shoppingList['items'] as $row): ?>
+                <tr draggable="true" data-sort-value="<?= htmlspecialchars($row['type'] . ':' . $row['name']) ?>">
+                    <td><?= htmlspecialchars($row['name']) ?></td>
+                    <td><?= number_format((float)$row['qty'], 0, ',', '.') ?></td>
+                </tr>
+            <?php endforeach; ?>
+            <?php if (count($shoppingList['items']) === 0): ?>
+                <tr><td colspan="2">Kein Einkaufsbedarf.</td></tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
+        <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 0, ',', '.') ?> $</strong></p>
+        <form method="post" style="margin-top: 12px;">
+            <input type="hidden" name="action" value="shopping.complete">
+            <button type="submit">Einkaufsliste abschließen</button>
+        </form>
+    </section>
+
+    <?php if ($shoppingCashCheckEnabled): ?>
+    <section>
+        <h3>Kassenprüfung</h3>
+        <p>Trage Anfangs- und Endbestand ein. Bei Abweichung erscheint eine Prüfmeldung.</p>
+        <form method="post" class="autosave-form">
+            <label>Kassen-Anfangsbestand
+                <input type="number" name="cash_start" step="0.01" min="0" value="<?= htmlspecialchars($cashStartInput) ?>" placeholder="0,00">
+            </label>
+            <label>Kassen-Endbestand
+                <input type="number" name="cash_end" step="0.01" min="0" value="<?= htmlspecialchars($cashEndInput) ?>" placeholder="0,00">
+            </label>
+            <button type="submit" name="action" value="shopping.cash.preview">Differenz prüfen</button>
+        </form>
+        <?php if ($action === 'shopping.cash.preview'): ?>
+            <p>Erwarteter Endbestand: <strong><?= number_format($expectedCashEnd, 2, ',', '.') ?> $</strong></p>
+            <p>Ist-Endbestand: <strong><?= number_format($cashEnd, 2, ',', '.') ?> $</strong></p>
+            <?php if ($hasCashDifference): ?>
+                <p class="flash" style="border-color: rgba(236, 87, 80, 0.7);">Achtung: Differenz von <?= number_format($cashDifference, 2, ',', '.') ?> $. Bitte Preise prüfen.</p>
+            <?php else: ?>
+                <p class="flash">Keine Differenz festgestellt.</p>
+            <?php endif; ?>
         <?php endif; ?>
-        </tbody>
-    </table>
-    <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 0, ',', '.') ?> $</strong></p>
-    <form method="post" style="margin-top: 12px;">
-        <input type="hidden" name="action" value="shopping.complete">
-        <button type="submit">Einkaufsliste abschließen</button>
-    </form>
-</section>
+    </section>
+    <?php endif; ?>
+</div>
 <?php elseif ($view === 'special-purchase'): ?>
 <section>
     <h2>Sondereinkauf</h2>
