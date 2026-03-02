@@ -146,7 +146,17 @@ function postJson(string $url, array $payload): void
     }
 }
 
-function sendShoppingListWebhook(array $shoppingList, string $companyName, ?array $user): void
+function parseCashAmount(string $value): ?float
+{
+    $normalized = trim(str_replace(',', '.', $value));
+    if ($normalized === '' || !is_numeric($normalized)) {
+        return null;
+    }
+
+    return (float)$normalized;
+}
+
+function sendShoppingListWebhook(array $shoppingList, string $companyName, ?array $user, ?float $cashStart = null, ?float $cashEnd = null): void
 {
     $webhookUrl = discordWebhookUrl();
     if ($webhookUrl === '') {
@@ -197,6 +207,19 @@ function sendShoppingListWebhook(array $shoppingList, string $companyName, ?arra
             'timestamp' => gmdate('c'),
         ]],
     ];
+
+    if ($cashStart !== null || $cashEnd !== null) {
+        $payload['embeds'][0]['fields'][] = [
+            'name' => 'Kassen-Anfangsbestand',
+            'value' => $cashStart !== null ? number_format($cashStart, 2, ',', '.') . ' $' : 'Nicht angegeben',
+            'inline' => true,
+        ];
+        $payload['embeds'][0]['fields'][] = [
+            'name' => 'Kassen-Endbestand',
+            'value' => $cashEnd !== null ? number_format($cashEnd, 2, ',', '.') . ' $' : 'Nicht angegeben',
+            'inline' => true,
+        ];
+    }
 
     postJson($webhookUrl, $payload);
 }
@@ -498,7 +521,9 @@ try {
         }
         if ($action === 'shopping.complete') {
             $list = shoppingList();
-            sendShoppingListWebhook($list, companyName(), currentUser());
+            $cashStart = parseCashAmount((string)($_POST['cash_start'] ?? ''));
+            $cashEnd = parseCashAmount((string)($_POST['cash_end'] ?? ''));
+            sendShoppingListWebhook($list, companyName(), currentUser(), $cashStart, $cashEnd);
             $completedByDiscordId = trim((string)(currentUser()['discord_id'] ?? ''));
             completeShoppingListAndUpdateInventory($completedByDiscordId);
             flash('Einkaufsliste abgeschlossen, an Discord gesendet und Lagerbestände aktualisiert.');
@@ -1168,11 +1193,6 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 <?php
     $cashStartInput = trim((string)($_POST['cash_start'] ?? ''));
     $cashEndInput = trim((string)($_POST['cash_end'] ?? ''));
-    $cashStart = is_numeric(str_replace(',', '.', $cashStartInput)) ? (float)str_replace(',', '.', $cashStartInput) : 0.0;
-    $cashEnd = is_numeric(str_replace(',', '.', $cashEndInput)) ? (float)str_replace(',', '.', $cashEndInput) : 0.0;
-    $expectedCashEnd = $cashStart - (float)$shoppingList['total'];
-    $cashDifference = $cashEnd - $expectedCashEnd;
-    $hasCashDifference = abs($cashDifference) > 0.009;
 ?>
 <div class="grid" style="grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap:16px; align-items:start;">
     <section>
@@ -1195,6 +1215,16 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
         <p><strong>Gesamtkosten Einkauf: <?= number_format((float)$shoppingList['total'], 0, ',', '.') ?> $</strong></p>
         <form method="post" style="margin-top: 12px;">
             <input type="hidden" name="action" value="shopping.complete">
+            <?php if ($shoppingCashCheckEnabled): ?>
+                <div class="grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
+                    <label>Kassen-Anfangsbestand
+                        <input type="number" name="cash_start" step="0.01" min="0" value="<?= htmlspecialchars($cashStartInput) ?>" placeholder="0,00">
+                    </label>
+                    <label>Kassen-Endbestand
+                        <input type="number" name="cash_end" step="0.01" min="0" value="<?= htmlspecialchars($cashEndInput) ?>" placeholder="0,00">
+                    </label>
+                </div>
+            <?php endif; ?>
             <button type="submit">Einkaufsliste abschließen</button>
         </form>
     </section>
@@ -1202,25 +1232,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
     <?php if ($shoppingCashCheckEnabled): ?>
     <section>
         <h3>Kassenprüfung</h3>
-        <p>Trage Anfangs- und Endbestand ein. Bei Abweichung erscheint eine Prüfmeldung.</p>
-        <form method="post" class="autosave-form">
-            <label>Kassen-Anfangsbestand
-                <input type="number" name="cash_start" step="0.01" min="0" value="<?= htmlspecialchars($cashStartInput) ?>" placeholder="0,00">
-            </label>
-            <label>Kassen-Endbestand
-                <input type="number" name="cash_end" step="0.01" min="0" value="<?= htmlspecialchars($cashEndInput) ?>" placeholder="0,00">
-            </label>
-            <button type="submit" name="action" value="shopping.cash.preview">Differenz prüfen</button>
-        </form>
-        <?php if ($action === 'shopping.cash.preview'): ?>
-            <p>Erwarteter Endbestand: <strong><?= number_format($expectedCashEnd, 2, ',', '.') ?> $</strong></p>
-            <p>Ist-Endbestand: <strong><?= number_format($cashEnd, 2, ',', '.') ?> $</strong></p>
-            <?php if ($hasCashDifference): ?>
-                <p class="flash" style="border-color: rgba(236, 87, 80, 0.7);">Achtung: Differenz von <?= number_format($cashDifference, 2, ',', '.') ?> $. Bitte Preise prüfen.</p>
-            <?php else: ?>
-                <p class="flash">Keine Differenz festgestellt.</p>
-            <?php endif; ?>
-        <?php endif; ?>
+        <p>Die Kassenbestände werden beim Abschließen der Einkaufsliste an Discord übermittelt (Dokumentation).</p>
     </section>
     <?php endif; ?>
 </div>
