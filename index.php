@@ -292,6 +292,67 @@ function sendSpecialPurchaseWebhook(array $purchase, string $companyName, ?array
     postJson($webhookUrl, $payload);
 }
 
+
+function sendInventoryWebhook(array $inventoryItems, string $companyName, ?array $user): void
+{
+    $webhookUrl = inventoryDiscordWebhookUrl();
+    if ($webhookUrl === '') {
+        throw new RuntimeException('Bitte zuerst eine Discord Webhook-URL für Lagerbestand unter Optionen hinterlegen.');
+    }
+
+    if ($inventoryItems === []) {
+        $inventoryItems = [];
+    }
+
+    usort($inventoryItems, static function (array $a, array $b): int {
+        return strcasecmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
+    });
+
+    $lines = [];
+    foreach ($inventoryItems as $item) {
+        $typeLabel = ((string)($item['type'] ?? '')) === 'product' ? 'Gericht' : 'Zutat';
+        $qtyValue = (float)($item['stock_qty'] ?? 0);
+        $qty = ((string)($item['type'] ?? '')) === 'product'
+            ? number_format($qtyValue, 0, ',', '.')
+            : number_format($qtyValue, 2, ',', '.');
+        $lines[] = sprintf('- [%s] %s: %s', $typeLabel, (string)($item['name'] ?? ''), $qty);
+    }
+
+    if ($lines === []) {
+        $lines[] = 'Kein Lagerbestand vorhanden.';
+    }
+
+    $sentBy = trim((string)($user['display_name'] ?? ''));
+    $userDiscordId = trim((string)($user['discord_id'] ?? ''));
+    if ($userDiscordId !== '') {
+        $dbUser = findUserByDiscordId($userDiscordId);
+        if (is_array($dbUser) && trim((string)($dbUser['display_name'] ?? '')) !== '') {
+            $sentBy = trim((string)$dbUser['display_name']);
+        }
+    }
+    if ($sentBy === '') {
+        $sentBy = 'Unbekannt';
+    }
+
+    $titlePrefix = trim($companyName) !== '' ? $companyName . ' · ' : '';
+
+    $payload = [
+        'embeds' => [[
+            'title' => $titlePrefix . 'Aktueller Lagerbestand',
+            'description' => implode("\n", $lines),
+            'color' => 3447003,
+            'fields' => [[
+                'name' => 'Gesendet von',
+                'value' => $sentBy,
+                'inline' => true,
+            ]],
+            'timestamp' => gmdate('c'),
+        ]],
+    ];
+
+    postJson($webhookUrl, $payload);
+}
+
 $view = $_GET['view'] ?? 'dashboard';
 if (isset($_GET['code']) || isset($_GET['error'])) {
     $view = 'oauth-callback';
@@ -523,6 +584,16 @@ try {
             header('Location: ?view=options');
             exit;
         }
+        if ($action === 'options.inventory_webhook.update') {
+            requireAdmin();
+            $newWebhookUrl = (string)($_POST['inventory_discord_webhook_url'] ?? '');
+            updateInventoryDiscordWebhookUrl($newWebhookUrl);
+            $urlInfo = trim($newWebhookUrl) === '' ? 'leer' : 'gesetzt';
+            writeAuditLog(currentUser(), 'options.inventory_webhook.update', '', 'Lagerbestand Discord Webhook ' . $urlInfo);
+            flash('Discord Webhook für Lagerbestand gespeichert.');
+            header('Location: ?view=options');
+            exit;
+        }
         if ($action === 'options.shopping_cash_check.toggle') {
             requireAdmin();
             $enabled = (string)($_POST['shopping_cash_check_enabled'] ?? '0') === '1';
@@ -551,6 +622,29 @@ try {
             sendSpecialPurchaseWebhook($purchase, companyName(), currentUser(), $cashStart, $cashEnd);
             flash('Sondereinkauf abgeschlossen, an Discord gesendet und Statistik aktualisiert.');
             header('Location: ?view=special-purchase');
+            exit;
+        }
+        if ($action === 'inventory.webhook.send') {
+            requireAdmin();
+            $inventoryRows = [];
+            foreach (allProductsByStockOrder() as $product) {
+                $inventoryRows[] = [
+                    'type' => 'product',
+                    'name' => (string)$product['name'],
+                    'stock_qty' => (float)$product['stock_qty'],
+                ];
+            }
+            foreach (allIngredientsByStockOrder() as $ingredient) {
+                $inventoryRows[] = [
+                    'type' => 'ingredient',
+                    'name' => (string)$ingredient['name'],
+                    'stock_qty' => (float)$ingredient['stock_qty'],
+                ];
+            }
+            sendInventoryWebhook($inventoryRows, companyName(), currentUser());
+            writeAuditLog(currentUser(), 'inventory.webhook.send', '', 'Aktueller Lagerbestand an Discord gesendet');
+            flash('Aktueller Lagerbestand an Discord gesendet.');
+            header('Location: ?view=inventory');
             exit;
         }
     }
@@ -668,6 +762,7 @@ $specialPurchaseCatalog = $loggedIn ? specialPurchaseCatalog() : [];
 $shoppingStats = $loggedIn ? shoppingStats() : [];
 $companyName = companyName();
 $discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
+$inventoryDiscordWebhookUrl = $loggedIn && isAdminUser($user) ? inventoryDiscordWebhookUrl() : '';
 $shoppingCashCheckEnabled = $loggedIn ? isShoppingCashCheckEnabled() : false;
 $productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
 $recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
@@ -1079,6 +1174,12 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 <section>
     <h2>Lager</h2>
     <p>Hier siehst du Gerichte und Zutaten gemeinsam. Du kannst die Reihenfolge per Drag &amp; Drop sortieren und nur die aktuelle Lagermenge pflegen.</p>
+    <?php if (isAdminUser($user)): ?>
+    <form method="post" style="margin-top: 12px; margin-bottom: 12px;">
+        <input type="hidden" name="action" value="inventory.webhook.send">
+        <button type="submit">Lagerbestand an Discord senden</button>
+    </form>
+    <?php endif; ?>
     <table>
         <thead><tr><th>Typ</th><th>Name</th><th>Aktueller Lagerbestand</th></tr></thead>
         <tbody id="inventory-items" class="inventory-list" data-sortable-key="inventory-order-v1">
@@ -1158,8 +1259,14 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 
     <form method="post" class="grid" style="grid-template-columns: 3fr 1fr; margin-top: 12px;">
         <input type="hidden" name="action" value="options.webhook.update">
-        <div><label>Discord Webhook URL<input name="discord_webhook_url" value="<?= htmlspecialchars($discordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
+        <div><label>Discord Webhook URL (Einkäufe)<input name="discord_webhook_url" value="<?= htmlspecialchars($discordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
         <div><button type="submit">Webhook speichern</button></div>
+    </form>
+
+    <form method="post" class="grid" style="grid-template-columns: 3fr 1fr; margin-top: 12px;">
+        <input type="hidden" name="action" value="options.inventory_webhook.update">
+        <div><label>Discord Webhook URL (Lagerbestand)<input name="inventory_discord_webhook_url" value="<?= htmlspecialchars($inventoryDiscordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
+        <div><button type="submit">Lager-Webhook speichern</button></div>
     </form>
 
     <form method="post" style="margin-top: 12px;">

@@ -826,6 +826,21 @@ function updateDiscordWebhookUrl(string $url): void
     updateAppSettingValue('discord_webhook_url', $url);
 }
 
+function inventoryDiscordWebhookUrl(): string
+{
+    return appSettingValue('inventory_discord_webhook_url');
+}
+
+function updateInventoryDiscordWebhookUrl(string $url): void
+{
+    $url = trim($url);
+    if ($url !== '' && !filter_var($url, FILTER_VALIDATE_URL)) {
+        throw new InvalidArgumentException('Webhook-URL ist ungültig.');
+    }
+
+    updateAppSettingValue('inventory_discord_webhook_url', $url);
+}
+
 function isShoppingCashCheckEnabled(): bool
 {
     return appSettingValue('shopping_cash_check_enabled', '0') === '1';
