@@ -4,6 +4,15 @@ require_once __DIR__ . '/src/repository.php';
 initSchema();
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    $sessionLifetime = 30 * 24 * 3600; // 30 Tage
+    ini_set('session.gc_maxlifetime', (string)$sessionLifetime);
+    session_set_cookie_params([
+        'lifetime' => $sessionLifetime,
+        'path'     => '/',
+        'secure'   => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
@@ -300,10 +309,6 @@ function sendInventoryWebhook(array $inventoryItems, string $companyName, ?array
         throw new RuntimeException('Bitte zuerst eine Discord Webhook-URL für Lagerbestand unter Optionen hinterlegen.');
     }
 
-    if ($inventoryItems === []) {
-        $inventoryItems = [];
-    }
-
     usort($inventoryItems, static function (array $a, array $b): int {
         return strcasecmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
     });
@@ -312,9 +317,7 @@ function sendInventoryWebhook(array $inventoryItems, string $companyName, ?array
     foreach ($inventoryItems as $item) {
         $typeLabel = ((string)($item['type'] ?? '')) === 'product' ? 'Gericht' : 'Zutat';
         $qtyValue = (float)($item['stock_qty'] ?? 0);
-        $qty = ((string)($item['type'] ?? '')) === 'product'
-            ? number_format($qtyValue, 0, ',', '.')
-            : number_format($qtyValue, 2, ',', '.');
+        $qty = number_format($qtyValue, 0, ',', '.');
         $lines[] = sprintf('- [%s] %s: %s', $typeLabel, (string)($item['name'] ?? ''), $qty);
     }
 
@@ -351,6 +354,24 @@ function sendInventoryWebhook(array $inventoryItems, string $companyName, ?array
     ];
 
     postJson($webhookUrl, $payload);
+}
+
+function renderAdminNav(string $activeView): string
+{
+    $links = [
+        'employees'   => 'Mitarbeiter',
+        'ingredients' => 'Zutaten',
+        'products'    => 'Rezepte',
+        'options'     => 'Optionen',
+        'auditlog'    => 'Audit-Log',
+    ];
+    $html = '<nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">';
+    foreach ($links as $viewKey => $label) {
+        $active = $viewKey === $activeView ? ' class="active"' : '';
+        $html .= sprintf('<a%s href="?view=%s">%s</a>', $active, htmlspecialchars($viewKey), htmlspecialchars($label));
+    }
+    $html .= '</nav>';
+    return $html;
 }
 
 $view = $_GET['view'] ?? 'dashboard';
@@ -696,7 +717,16 @@ try {
             throw new RuntimeException('Discord ID fehlt in der Antwort.');
         }
 
-        $user = createOrUpdateUserAccess($discordId, $displayName);
+        $avatarHash = trim((string)($discordUser['avatar'] ?? ''));
+        if ($avatarHash !== '') {
+            $avatarExt = str_starts_with($avatarHash, 'a_') ? 'gif' : 'webp';
+            $avatarUrl = "https://cdn.discordapp.com/avatars/{$discordId}/{$avatarHash}.{$avatarExt}?size=64";
+        } else {
+            $defaultIndex = (int)((int)$discordId >> 22) % 6;
+            $avatarUrl = "https://cdn.discordapp.com/embed/avatars/{$defaultIndex}.png";
+        }
+
+        $user = createOrUpdateUserAccess($discordId, $displayName, $avatarUrl);
         if ((int)$user['is_approved'] !== 1 && !isAdminUser($user)) {
             unset($_SESSION['auth_user']);
             flash('Du bist noch nicht freigeschaltet. Bitte Admin kontaktieren.');
@@ -705,10 +735,11 @@ try {
         }
 
         $_SESSION['auth_user'] = [
-            'discord_id' => $user['discord_id'],
+            'discord_id'   => $user['discord_id'],
             'display_name' => $user['display_name'],
-            'is_admin' => (int)$user['is_admin'],
-            'is_approved' => (int)$user['is_approved'],
+            'avatar_url'   => $user['avatar_url'] ?? $avatarUrl,
+            'is_admin'     => (int)$user['is_admin'],
+            'is_approved'  => (int)$user['is_approved'],
         ];
 
         flash('Erfolgreich mit Discord eingeloggt.');
@@ -731,43 +762,60 @@ if ($loggedIn && !isAdminUser($user) && in_array($view, $adminOnlyViews, true)) 
     $view = 'dashboard';
 }
 
-$ingredients = $loggedIn ? allIngredients() : [];
-$products = $loggedIn ? allProducts() : [];
-$inventoryIngredients = $loggedIn ? allIngredientsByStockOrder() : [];
-$inventoryProducts = $loggedIn ? allProductsByStockOrder() : [];
+$isAdmin = $loggedIn && isAdminUser($user);
+
+$needsIngredients    = $loggedIn && in_array($view, ['ingredients', 'products', 'recipe', 'dashboard'], true);
+$needsProducts       = $loggedIn && in_array($view, ['products', 'recipe', 'dashboard'], true);
+$needsInventory      = $loggedIn && $view === 'inventory';
+$needsShoppingList   = $loggedIn && in_array($view, ['shopping', 'dashboard'], true);
+$needsSpecialCatalog = $loggedIn && $view === 'special-purchase';
+$needsStats          = $loggedIn && $view === 'stats';
+$needsAdminUsers     = $isAdmin && $view === 'employees';
+$needsAuditLog       = $isAdmin && $view === 'auditlog';
+$needsRecipe         = $isAdmin && $view === 'recipe';
+$needsOptions        = $isAdmin && $view === 'options';
+
+$ingredients = $needsIngredients ? allIngredients() : [];
+$products    = $needsProducts    ? allProducts()     : [];
+
 $inventoryItems = [];
-foreach ($inventoryProducts as $product) {
-    $inventoryItems[] = [
-        'type' => 'product',
-        'type_label' => 'Gericht',
-        'id' => (int)$product['id'],
-        'name' => $product['name'],
-        'stock_qty' => (float)$product['stock_qty'],
-    ];
+if ($needsInventory) {
+    $inventoryProducts   = allProductsByStockOrder();
+    $inventoryIngredients = allIngredientsByStockOrder();
+    foreach ($inventoryProducts as $product) {
+        $inventoryItems[] = [
+            'type' => 'product',
+            'type_label' => 'Gericht',
+            'id' => (int)$product['id'],
+            'name' => $product['name'],
+            'stock_qty' => (float)$product['stock_qty'],
+        ];
+    }
+    foreach ($inventoryIngredients as $ingredient) {
+        $inventoryItems[] = [
+            'type' => 'ingredient',
+            'type_label' => 'Zutat',
+            'id' => (int)$ingredient['id'],
+            'name' => $ingredient['name'],
+            'stock_qty' => (float)$ingredient['stock_qty'],
+        ];
+    }
+    usort($inventoryItems, static function (array $a, array $b): int {
+        return strcasecmp($a['name'], $b['name']);
+    });
 }
-foreach ($inventoryIngredients as $ingredient) {
-    $inventoryItems[] = [
-        'type' => 'ingredient',
-        'type_label' => 'Zutat',
-        'id' => (int)$ingredient['id'],
-        'name' => $ingredient['name'],
-        'stock_qty' => (float)$ingredient['stock_qty'],
-    ];
-}
-usort($inventoryItems, static function (array $a, array $b): int {
-    return strcasecmp($a['name'], $b['name']);
-});
-$shoppingList = $loggedIn ? shoppingList() : ['items' => [], 'total' => 0];
-$specialPurchaseCatalog = $loggedIn ? specialPurchaseCatalog() : [];
-$shoppingStats = $loggedIn ? shoppingStats() : [];
-$companyName = companyName();
-$discordWebhookUrl = $loggedIn && isAdminUser($user) ? discordWebhookUrl() : '';
-$inventoryDiscordWebhookUrl = $loggedIn && isAdminUser($user) ? inventoryDiscordWebhookUrl() : '';
+
+$shoppingList          = $needsShoppingList   ? shoppingList()          : ['items' => [], 'total' => 0];
+$specialPurchaseCatalog = $needsSpecialCatalog ? specialPurchaseCatalog() : [];
+$shoppingStats         = $needsStats          ? shoppingStats()         : [];
+$companyName           = companyName();
 $shoppingCashCheckEnabled = $loggedIn ? isShoppingCashCheckEnabled() : false;
-$productForRecipe = $loggedIn && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
-$recipeItems = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
-$adminUsers = ($loggedIn && isAdminUser($user)) ? allUserAccessEntries() : [];
-$auditLogEntries = ($loggedIn && isAdminUser($user)) ? auditLogEntries(250) : [];
+$discordWebhookUrl          = $needsOptions ? discordWebhookUrl()          : '';
+$inventoryDiscordWebhookUrl = $needsOptions ? inventoryDiscordWebhookUrl() : '';
+$productForRecipe = $needsRecipe && isset($_GET['product_id']) ? productById((int)$_GET['product_id']) : null;
+$recipeItems      = $productForRecipe ? recipeItemsByProduct((int)$productForRecipe['id']) : [];
+$adminUsers       = $needsAdminUsers ? allUserAccessEntries() : [];
+$auditLogEntries  = $needsAuditLog   ? auditLogEntries(250)  : [];
 $discordLoginUrl = discordAuthUrl();
 $message = flash();
 $isAdminWorkspaceView = $loggedIn && isAdminUser($user) && in_array($view, ['employees', 'recipe', 'options', 'auditlog'], true);
@@ -783,137 +831,400 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
     <title>Business Einkaufsliste</title>
     <style>
         :root {
-            --bg: #04070f;
-            --panel: rgba(10, 16, 33, 0.88);
-            --panel-border: rgba(109, 130, 185, 0.35);
-            --text: #e8eefb;
-            --muted: #8f9fc5;
-            --accent: #1ed9d2;
-            --accent-2: #3c69ff;
-            --danger: #ec5750;
+            --bg: #05080f;
+            --surface: rgba(255, 255, 255, 0.032);
+            --surface-hover: rgba(255, 255, 255, 0.055);
+            --border: rgba(255, 255, 255, 0.075);
+            --border-accent: rgba(91, 138, 245, 0.38);
+            --text: #e5ecff;
+            --text-muted: #5d718f;
+            --text-dim: #344260;
+            --accent: #5b8af5;
+            --accent-2: #1ed9d2;
+            --accent-glow: rgba(91, 138, 245, 0.22);
+            --teal-glow: rgba(30, 217, 210, 0.18);
+            --danger: #ff5252;
+            --danger-dim: rgba(255, 82, 82, 0.1);
+            --r-sm: 8px;
+            --r-md: 12px;
+            --r-lg: 16px;
+            --r-xl: 22px;
+            --r-pill: 9999px;
+            --ease: 0.17s ease;
         }
-        * { box-sizing: border-box; }
-        html, body {
-            min-height: 100%;
-        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { min-height: 100%; }
+
         body {
-            margin: 0;
-            padding: 24px;
+            padding: 20px;
             min-height: 100vh;
-            font-family: Inter, Segoe UI, Arial, sans-serif;
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 14px;
+            line-height: 1.55;
             color: var(--text);
             background:
-                radial-gradient(circle at 10% 0%, rgba(30, 217, 210, 0.2), transparent 35%),
-                radial-gradient(circle at 70% -10%, rgba(60, 105, 255, 0.18), transparent 30%),
+                radial-gradient(ellipse 90% 55% at 12% -8%,  rgba(91, 138, 245, 0.14) 0%, transparent 55%),
+                radial-gradient(ellipse 65% 45% at 88%  5%,  rgba(30, 217, 210, 0.09) 0%, transparent 52%),
+                radial-gradient(ellipse 110% 70% at 50% 108%, rgba(91, 138, 245, 0.06) 0%, transparent 60%),
                 var(--bg);
-            background-repeat: no-repeat;
-            background-size: cover;
             background-attachment: fixed;
         }
-        h1 { margin: 0; font-size: 1.6rem; }
-        h2, h3 { color: #f2f6ff; margin-top: 0; }
-        p, li, label { color: var(--muted); }
-        .app-shell { max-width: 1500px; margin: 0 auto; }
+
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 99px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.17); }
+
+        /* ── Typography ── */
+        h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(128deg, var(--text) 35%, var(--accent-2) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        h2 {
+            font-size: 1.02rem;
+            font-weight: 600;
+            color: var(--text);
+            letter-spacing: -0.01em;
+            margin-bottom: 14px;
+        }
+        h3 { font-size: 0.93rem; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+        p  { color: var(--text-muted); font-size: 0.86rem; margin-bottom: 10px; }
+        li { color: var(--text-muted); font-size: 0.87rem; padding: 3px 0; }
+        li strong { color: var(--text); }
+        ul { padding-left: 18px; }
+        small { font-size: 0.79rem; color: var(--text-muted); }
+        code {
+            background: rgba(255,255,255,0.07);
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 0.84em;
+            color: var(--accent-2);
+            font-family: 'JetBrains Mono', 'Consolas', monospace;
+        }
+        a { color: var(--accent); text-decoration: none; transition: color var(--ease); }
+        a:hover { color: var(--accent-2); }
+
+        label {
+            display: block;
+            font-size: 0.81rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.01em;
+        }
+        label input, label select { margin-top: 6px; }
+
+        /* ── App shell ── */
+        .app-shell { max-width: 1400px; margin: 0 auto; }
         .app-shell.app-shell-wide { max-width: 100%; }
+
+        /* ── Top bar ── */
         .top-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 16px;
-            padding: 14px 18px;
-            border-radius: 16px;
-            background: linear-gradient(120deg, rgba(11, 22, 46, 0.95), rgba(5, 10, 22, 0.95));
-            border: 1px solid var(--panel-border);
-            box-shadow: 0 0 0 1px rgba(9, 25, 53, 0.45), 0 16px 30px rgba(0, 0, 0, 0.45);
+            padding: 14px 22px;
+            border-radius: var(--r-xl);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.05),
+                0 12px 36px rgba(0,0,0,0.45);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
         }
+
+        /* ── Navigation ── */
         .pill-nav {
-            margin-top: 16px;
+            margin-top: 14px;
             display: inline-flex;
             flex-wrap: wrap;
-            gap: 8px;
-            padding: 8px;
-            border-radius: 999px;
-            background: rgba(8, 14, 29, 0.8);
-            border: 1px solid var(--panel-border);
+            gap: 3px;
+            padding: 5px;
+            border-radius: var(--r-pill);
+            background: rgba(0,0,0,0.48);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
         }
         nav a {
             text-decoration: none;
-            color: var(--text);
-            padding: 10px 14px;
-            border-radius: 999px;
-            transition: 0.2s ease;
+            color: var(--text-muted);
+            padding: 7px 15px;
+            border-radius: var(--r-pill);
+            font-size: 0.83rem;
+            font-weight: 500;
+            transition: all var(--ease);
+            white-space: nowrap;
         }
-        nav a:hover,
+        nav a:hover  { color: var(--text); background: rgba(255,255,255,0.07); }
         nav a.active {
-            color: #041015;
-            background: linear-gradient(135deg, var(--accent), #53e9b0);
-            box-shadow: 0 0 15px rgba(30, 217, 210, 0.45);
+            color: #041018;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            box-shadow: 0 0 20px var(--accent-glow);
+            font-weight: 600;
         }
+
+        /* ── Content grid ── */
         .content-grid {
             display: grid;
             grid-template-columns: 1.5fr 1fr;
-            gap: 18px;
-            margin-top: 18px;
+            gap: 16px;
+            margin-top: 16px;
         }
-        .content-grid.shopping-view {
-            grid-template-columns: 1fr;
-        }
+        .content-grid.shopping-view { grid-template-columns: 1fr; }
+
+        /* ── Panels ── */
         section {
-            background: linear-gradient(140deg, rgba(7, 12, 25, 0.94), rgba(5, 8, 19, 0.94));
-            border: 1px solid var(--panel-border);
-            border-radius: 14px;
-            padding: 16px;
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-            margin-bottom: 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r-lg);
+            padding: 20px 22px;
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.04),
+                0 8px 32px rgba(0,0,0,0.38);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            margin-bottom: 14px;
         }
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th, td {
-            padding: 10px 8px;
-            border-bottom: 1px solid rgba(151, 169, 214, 0.22);
+
+        /* ── Tables ── */
+        table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+        thead tr { border-bottom: 1px solid var(--border); }
+        th {
+            padding: 8px 11px;
             text-align: left;
-            color: #d6def2;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
         }
-        input, select {
-            padding: 10px;
-            width: 100%;
-            background: rgba(10, 16, 33, 0.95);
+        td {
+            padding: 11px;
+            border-bottom: 1px solid rgba(255,255,255,0.038);
             color: var(--text);
-            border: 1px solid rgba(131, 149, 193, 0.35);
-            border-radius: 10px;
+            font-size: 0.87rem;
+            vertical-align: middle;
         }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr { transition: background var(--ease); }
+        tbody tr:hover td { background: var(--surface-hover); }
+
+        /* ── Inputs ── */
+        input:not([type="checkbox"]):not([type="hidden"]),
+        select {
+            padding: 9px 13px;
+            width: 100%;
+            background: rgba(0,0,0,0.38);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: var(--r-sm);
+            font-size: 0.86rem;
+            font-family: inherit;
+            transition: border-color var(--ease), box-shadow var(--ease), background var(--ease);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input:not([type="checkbox"]):not([type="hidden"]):hover,
+        select:hover {
+            border-color: rgba(255,255,255,0.13);
+            background: rgba(0,0,0,0.44);
+        }
+        input:not([type="checkbox"]):not([type="hidden"]):focus,
+        select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+            background: rgba(0,0,0,0.44);
+        }
+        input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button { opacity: 0.28; }
+        select option { background: #0d1525; color: var(--text); }
+
+        /* ── Form grid ── */
         .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: end; }
+
+        /* ── Buttons ── */
         button {
-            padding: 10px 14px;
-            border: 1px solid rgba(78, 209, 226, 0.5);
-            border-radius: 999px;
-            background: linear-gradient(135deg, #0f223f, #0e1730);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 18px;
+            border: 1px solid var(--border-accent);
+            border-radius: var(--r-pill);
+            background: linear-gradient(135deg, rgba(91,138,245,0.13), rgba(30,217,210,0.07));
             color: var(--text);
             cursor: pointer;
+            font-size: 0.83rem;
+            font-weight: 500;
+            font-family: inherit;
+            transition: all var(--ease);
+            white-space: nowrap;
+            line-height: 1;
         }
-        button:hover { border-color: var(--accent); box-shadow: 0 0 15px rgba(30, 217, 210, 0.3); }
-        .danger { border-color: rgba(236, 87, 80, 0.7); color: #ffd6d4; }
+        button:hover {
+            border-color: var(--accent);
+            background: linear-gradient(135deg, rgba(91,138,245,0.28), rgba(30,217,210,0.14));
+            box-shadow: 0 0 22px var(--accent-glow);
+            transform: translateY(-1px);
+            color: #fff;
+        }
+        button:active { transform: translateY(0); }
+
+        .danger {
+            border-color: rgba(255,82,82,0.32);
+            background: var(--danger-dim);
+            color: #ffaaaa;
+        }
+        .danger:hover {
+            border-color: var(--danger);
+            background: rgba(255,82,82,0.2);
+            box-shadow: 0 0 22px rgba(255,82,82,0.2);
+            color: #ffd5d5;
+        }
+
+        /* ── Flash ── */
         .flash {
-            padding: 12px;
-            border-radius: 10px;
-            border: 1px solid rgba(30, 217, 210, 0.4);
-            background: rgba(17, 35, 49, 0.8);
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 13px 18px;
+            border-radius: var(--r-md);
+            border: 1px solid var(--border-accent);
+            background: rgba(91,138,245,0.07);
             margin-top: 14px;
+            font-size: 0.87rem;
+            color: var(--text);
         }
+        .flash::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 9px var(--accent);
+            flex-shrink: 0;
+        }
+
+        /* ── Autosave ── */
         .autosave-form {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 7px;
             align-items: stretch;
         }
         .autosave-note {
-            min-height: 1.1em;
-            font-size: 0.8rem;
-            color: var(--accent);
+            min-height: 1em;
+            font-size: 0.75rem;
+            color: var(--accent-2);
+            letter-spacing: 0.025em;
+            padding-left: 2px;
         }
-        a { color: #87e5ff; }
+
+        /* ── User badge ── */
+        .user-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 5px 5px 5px;
+            border-radius: var(--r-pill);
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+        }
+        .user-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 2px solid var(--border-accent);
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+        .user-avatar--fallback {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: #041018;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+        .user-badge__info {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            margin-right: 2px;
+        }
+        .user-badge__name {
+            font-size: 0.84rem;
+            font-weight: 500;
+            color: var(--text);
+            line-height: 1.2;
+        }
+        .user-badge__role {
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--accent-2);
+        }
+        .btn-icon {
+            padding: 6px 10px;
+            font-size: 0.95rem;
+            line-height: 1;
+            border-radius: 50%;
+            min-width: 32px;
+            height: 32px;
+        }
+
+        /* ── Employees avatar ── */
+        .tbl-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 1px solid var(--border-accent);
+            object-fit: cover;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        .tbl-avatar--fallback {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: #041018;
+            font-weight: 700;
+            font-size: 0.75rem;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        /* ── Responsive ── */
         @media (max-width: 1100px) {
             .content-grid { grid-template-columns: 1fr; }
             .grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .top-bar { padding: 12px 16px; flex-wrap: wrap; }
+            section { padding: 16px; }
+            .grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -922,14 +1233,19 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
     <header class="top-bar">
         <h1><?= htmlspecialchars(trim($companyName)) ?></h1>
         <?php if ($loggedIn): ?>
-            <div style="display:flex; align-items:center; gap:10px;">
-                <small>Angemeldet als <?= htmlspecialchars((string)($user['display_name'] ?? $user['discord_id'] ?? '')) ?></small>
+            <div class="user-badge">
+                <?php $avatarUrl = (string)($user['avatar_url'] ?? ''); ?>
+                <?php if ($avatarUrl !== ''): ?>
+                    <img class="user-avatar" src="<?= htmlspecialchars($avatarUrl) ?>" alt="" title="<?= htmlspecialchars((string)($user['display_name'] ?? '')) ?>">
+                <?php else: ?>
+                    <div class="user-avatar user-avatar--fallback" title="<?= htmlspecialchars((string)($user['display_name'] ?? '')) ?>"><?= htmlspecialchars(mb_substr((string)($user['display_name'] ?? '?'), 0, 1)) ?></div>
+                <?php endif; ?>
                 <?php if (isAdminUser($user)): ?>
-                    <a href="?view=employees"><button type="button">Admin</button></a>
+                    <a href="?view=employees"><button type="button" class="btn-icon" title="Admin-Bereich">⚙</button></a>
                 <?php endif; ?>
                 <form method="post" style="margin:0;">
                     <input type="hidden" name="action" value="auth.logout">
-                    <button type="submit">Logout</button>
+                    <button type="button" class="btn-icon" title="Abmelden" onclick="this.closest('form').submit()">↩</button>
                 </form>
             </div>
         <?php endif; ?>
@@ -966,20 +1282,22 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 
 <?php elseif ($view === 'employees' && isAdminUser($user)): ?>
 <section>
-    <nav class="pill-nav" style="margin-top:8px;">
-        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
-        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
-        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
-        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
-    </nav>
+    <?= renderAdminNav($view) ?>
     <table>
         <thead><tr><th>Discord ID</th><th>Name</th><th>Freigabe</th><th>Admin</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($adminUsers as $entry): ?>
             <tr>
                 <td><?= htmlspecialchars($entry['discord_id']) ?></td>
-                <td><?= htmlspecialchars($entry['display_name']) ?></td>
+                <td>
+                    <?php $entryAvatar = (string)($entry['avatar_url'] ?? ''); ?>
+                    <?php if ($entryAvatar !== ''): ?>
+                        <img class="tbl-avatar" src="<?= htmlspecialchars($entryAvatar) ?>" alt="">
+                    <?php else: ?>
+                        <span class="tbl-avatar--fallback"><?= htmlspecialchars(mb_substr((string)($entry['display_name'] ?? '?'), 0, 1)) ?></span>
+                    <?php endif; ?>
+                    <?= htmlspecialchars($entry['display_name']) ?>
+                </td>
                 <td><?= (int)$entry['is_approved'] === 1 ? 'Freigeschaltet' : 'Gesperrt' ?></td>
                 <td><?= (int)$entry['is_admin'] === 1 ? 'Ja' : 'Nein' ?></td>
                 <td>
@@ -1031,13 +1349,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 
 <?php elseif ($view === 'ingredients' && isAdminUser($user)): ?>
 <section>
-    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
-        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
-        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
-        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
-        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
-    </nav>
+    <?= renderAdminNav($view) ?>
     <h2>Zutaten</h2>
     <form method="post" class="grid">
         <input type="hidden" name="action" value="ingredient.create">
@@ -1056,7 +1368,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
                     <form method="post" class="autosave-form" id="<?= $formId ?>">
                     <input type="hidden" name="action" value="ingredient.update">
                     <input type="hidden" name="id" value="<?= (int)$ingredient['id'] ?>">
-                    <input type="hidden" name="stock_qty" value="<?= htmlspecialchars((string)$ingredient['stock_qty']) ?>">
+                    <input type="hidden" name="stock_qty" value="<?= (int)$ingredient['stock_qty'] ?>">
                         <input form="<?= $formId ?>" name="name" value="<?= htmlspecialchars($ingredient['name']) ?>">
                         <small class="autosave-note" aria-live="polite"></small>
                     </form>
@@ -1077,13 +1389,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 
 <?php elseif ($view === 'products' && isAdminUser($user)): ?>
 <section>
-    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
-        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
-        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
-        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
-        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
-    </nav>
+    <?= renderAdminNav($view) ?>
     <h2>Direktvermarktung</h2>
     <p>Direktes Gericht: Preis wird manuell gepflegt.</p>
     <form method="post" class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
@@ -1191,7 +1497,7 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
                     <form method="post" class="autosave-form">
                         <input type="hidden" name="action" value="<?= $item['type'] === 'product' ? 'product.stock.update' : 'ingredient.stock.update' ?>">
                         <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
-                        <input type="number" step="1" name="stock_qty" value="<?= $item['type'] === 'ingredient' ? htmlspecialchars((string)$item['stock_qty']) : (int)$item['stock_qty'] ?>">
+                        <input type="number" step="1" name="stock_qty" value="<?= (int)$item['stock_qty'] ?>">
                         <small class="autosave-note" aria-live="polite"></small>
                     </form>
                 </td>
@@ -1243,52 +1549,40 @@ $singleColumnViews = ['login', 'employees', 'recipe', 'options', 'auditlog'];
 
 <?php elseif ($view === 'options' && isAdminUser($user)): ?>
 <section>
-    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
-        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
-        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
-        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
-        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
-    </nav>
+    <?= renderAdminNav($view) ?>
     <h2>Optionen</h2>
-    <form method="post" class="grid" style="grid-template-columns: 3fr 1fr;">
+    <form method="post" class="autosave-form" style="margin-bottom: 14px;">
         <input type="hidden" name="action" value="options.company.update">
-        <div><label>Unternehmensname<input name="company_name" value="<?= htmlspecialchars($companyName) ?>" placeholder="z. B. Muster GmbH"></label></div>
-        <div><button type="submit">Speichern</button></div>
+        <label>Unternehmensname<input name="company_name" value="<?= htmlspecialchars($companyName) ?>" placeholder="z. B. Muster GmbH"></label>
+        <small class="autosave-note" aria-live="polite"></small>
     </form>
 
-    <form method="post" class="grid" style="grid-template-columns: 3fr 1fr; margin-top: 12px;">
+    <form method="post" class="autosave-form" style="margin-bottom: 14px;">
         <input type="hidden" name="action" value="options.webhook.update">
-        <div><label>Discord Webhook URL (Einkäufe)<input name="discord_webhook_url" value="<?= htmlspecialchars($discordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
-        <div><button type="submit">Webhook speichern</button></div>
+        <label>Discord Webhook URL (Einkäufe)<input name="discord_webhook_url" value="<?= htmlspecialchars($discordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label>
+        <small class="autosave-note" aria-live="polite"></small>
     </form>
 
-    <form method="post" class="grid" style="grid-template-columns: 3fr 1fr; margin-top: 12px;">
+    <form method="post" class="autosave-form" style="margin-bottom: 14px;">
         <input type="hidden" name="action" value="options.inventory_webhook.update">
-        <div><label>Discord Webhook URL (Lagerbestand)<input name="inventory_discord_webhook_url" value="<?= htmlspecialchars($inventoryDiscordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label></div>
-        <div><button type="submit">Lager-Webhook speichern</button></div>
+        <label>Discord Webhook URL (Lagerbestand)<input name="inventory_discord_webhook_url" value="<?= htmlspecialchars($inventoryDiscordWebhookUrl) ?>" placeholder="https://discord.com/api/webhooks/..." autocomplete="off"></label>
+        <small class="autosave-note" aria-live="polite"></small>
     </form>
 
-    <form method="post" style="margin-top: 12px;">
+    <form method="post" class="autosave-form">
         <input type="hidden" name="action" value="options.shopping_cash_check.toggle">
         <label style="display:flex; align-items:center; gap:8px;">
             <input type="hidden" name="shopping_cash_check_enabled" value="0">
             <input type="checkbox" name="shopping_cash_check_enabled" value="1" <?= $shoppingCashCheckEnabled ? 'checked' : '' ?>>
             Kassenprüfung neben Einkaufsliste anzeigen
         </label>
-        <button type="submit" style="margin-top: 8px;">Kassenprüfung speichern</button>
+        <small class="autosave-note" aria-live="polite"></small>
     </form>
 </section>
 
 <?php elseif ($view === 'auditlog' && isAdminUser($user)): ?>
 <section>
-    <nav class="pill-nav" style="margin-top:0; margin-bottom:12px;">
-        <a class="<?= $view === 'employees' ? 'active' : '' ?>" href="?view=employees">Mitarbeiter</a>
-        <a class="<?= $view === 'ingredients' ? 'active' : '' ?>" href="?view=ingredients">Zutaten</a>
-        <a class="<?= $view === 'products' ? 'active' : '' ?>" href="?view=products">Rezepte</a>
-        <a class="<?= $view === 'options' ? 'active' : '' ?>" href="?view=options">Optionen</a>
-        <a class="<?= $view === 'auditlog' ? 'active' : '' ?>" href="?view=auditlog">Audit-Log</a>
-    </nav>
+    <?= renderAdminNav($view) ?>
     <h2>Audit-Log</h2>
     <p>Hier siehst du, wer was wann im Admin-Bereich geändert hat.</p>
     <table>

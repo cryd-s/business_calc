@@ -15,14 +15,14 @@ function adminDisplayName(): string
 
 function findUserByDiscordId(string $discordId): ?array
 {
-    $stmt = db()->prepare('SELECT id, discord_id, display_name, is_admin, is_approved, created_at, updated_at FROM user_access WHERE discord_id = :discord_id LIMIT 1');
+    $stmt = db()->prepare('SELECT id, discord_id, display_name, avatar_url, is_admin, is_approved, created_at, updated_at FROM user_access WHERE discord_id = :discord_id LIMIT 1');
     $stmt->execute([':discord_id' => trim($discordId)]);
     $row = $stmt->fetch();
 
     return $row ?: null;
 }
 
-function createOrUpdateUserAccess(string $discordId, string $displayName): array
+function createOrUpdateUserAccess(string $discordId, string $displayName, string $avatarUrl = ''): array
 {
     $discordId = trim($discordId);
     if ($discordId === '') {
@@ -38,23 +38,25 @@ function createOrUpdateUserAccess(string $discordId, string $displayName): array
     $driver = db()->getAttribute(PDO::ATTR_DRIVER_NAME);
     if ($driver === 'sqlite') {
         $sql = <<<'SQL'
-INSERT INTO user_access (discord_id, display_name, is_admin, is_approved)
-VALUES (:discord_id, :display_name, :is_admin, :is_approved)
+INSERT INTO user_access (discord_id, display_name, avatar_url, is_admin, is_approved)
+VALUES (:discord_id, :display_name, :avatar_url, :is_admin, :is_approved)
 ON CONFLICT(discord_id) DO UPDATE SET
     display_name = CASE
         WHEN TRIM(user_access.display_name) = '' THEN excluded.display_name
         ELSE user_access.display_name
     END,
+    avatar_url = excluded.avatar_url,
     is_admin = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_admin END,
     is_approved = CASE WHEN user_access.discord_id = :admin_id THEN 1 ELSE user_access.is_approved END,
     updated_at = CURRENT_TIMESTAMP
 SQL;
     } else {
         $sql = <<<'SQL'
-INSERT INTO user_access (discord_id, display_name, is_admin, is_approved)
-VALUES (:discord_id, :display_name, :is_admin, :is_approved)
+INSERT INTO user_access (discord_id, display_name, avatar_url, is_admin, is_approved)
+VALUES (:discord_id, :display_name, :avatar_url, :is_admin, :is_approved)
 ON DUPLICATE KEY UPDATE
     display_name = IF(TRIM(display_name) = '', VALUES(display_name), display_name),
+    avatar_url = VALUES(avatar_url),
     is_admin = IF(discord_id = :admin_id, 1, is_admin),
     is_approved = IF(discord_id = :admin_id, 1, is_approved)
 SQL;
@@ -64,6 +66,7 @@ SQL;
     $stmt->execute([
         ':discord_id' => $discordId,
         ':display_name' => $displayName,
+        ':avatar_url' => trim($avatarUrl),
         ':is_admin' => $isAdmin,
         ':is_approved' => $isAdmin,
         ':admin_id' => discordAdminId(),
@@ -117,7 +120,7 @@ function deleteUserAccess(string $discordId): void
 
 function allUserAccessEntries(): array
 {
-    $stmt = db()->query('SELECT id, discord_id, display_name, is_admin, is_approved, created_at, updated_at FROM user_access ORDER BY is_admin DESC, is_approved DESC, created_at ASC');
+    $stmt = db()->query('SELECT id, discord_id, display_name, avatar_url, is_admin, is_approved, created_at, updated_at FROM user_access ORDER BY is_admin DESC, is_approved DESC, created_at ASC');
     return $stmt->fetchAll();
 }
 
@@ -372,6 +375,16 @@ function recipeItemsByProduct(int $productId): array
     return $stmt->fetchAll();
 }
 
+function allRecipeItemsGroupedByProduct(): array
+{
+    $stmt = db()->query('SELECT ri.product_id, ri.ingredient_id, ri.qty_per_product, i.price_per_unit FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id');
+    $byProduct = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $byProduct[(int)$row['product_id']][] = $row;
+    }
+    return $byProduct;
+}
+
 function recipeItemByProductAndIngredient(int $productId, int $ingredientId): ?array
 {
     $stmt = db()->prepare('SELECT ri.*, i.name AS ingredient_name, p.name AS product_name FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id JOIN products p ON p.id = ri.product_id WHERE ri.product_id = :product_id AND ri.ingredient_id = :ingredient_id LIMIT 1');
@@ -448,6 +461,7 @@ function shoppingList(): array
 {
     $products = allProducts();
     $ingredients = allIngredients();
+    $recipeByProduct = allRecipeItemsGroupedByProduct();
 
     $ingredientNeeds = [];
     foreach ($ingredients as $ingredient) {
@@ -468,7 +482,6 @@ function shoppingList(): array
             continue;
         }
 
-        $recipe = recipeItemsByProduct((int)$product['id']);
         if ((int)$product['is_direct_purchase'] === 1) {
             $unitPrice = (float)$product['direct_purchase_price'];
             $shoppingItems[] = [
@@ -481,7 +494,7 @@ function shoppingList(): array
             continue;
         }
 
-        foreach ($recipe as $item) {
+        foreach ($recipeByProduct[(int)$product['id']] ?? [] as $item) {
             $id = (int)$item['ingredient_id'];
             $ingredientNeeds[$id]['needed_qty'] += (float)$item['qty_per_product'] * $missingProductQty;
         }
@@ -646,6 +659,7 @@ function completeShoppingListAndUpdateInventory(string $completedByDiscordId = '
     $shoppingListSnapshot = shoppingList();
     $products = allProducts();
     $ingredients = allIngredients();
+    $recipeByProduct = allRecipeItemsGroupedByProduct();
 
     $ingredientMissingQty = [];
     foreach ($ingredients as $ingredient) {
@@ -666,8 +680,7 @@ function completeShoppingListAndUpdateInventory(string $completedByDiscordId = '
             continue;
         }
 
-        $recipe = recipeItemsByProduct($productId);
-        foreach ($recipe as $item) {
+        foreach ($recipeByProduct[$productId] ?? [] as $item) {
             $ingredientId = (int)$item['ingredient_id'];
             $ingredientMissingQty[$ingredientId] += (float)$item['qty_per_product'] * $missingProductQty;
         }
